@@ -986,13 +986,16 @@ function tapPlanet(x, y) {
 }
 
 // ---------- loop ----------
-let uiTick = 0, resume = true, panelH = 0; // resume: skip one frame gap after a hidden tab (away() already paid it)
+let uiTick = 0, resume = true, panelH = 0, paidAt = 0; // resume: skip one income gap after a hidden tab (away() already paid it)
 function frame(ms) {
-  const t = ms / 1000, gap = resume ? 0 : Math.min(30, t - last), dt = Math.min(.1, gap);
-  last = t; resume = false;
+  const t = ms / 1000, dt = resume ? 0 : Math.max(0, Math.min(.1, t - last)), now = Date.now();
+  // income runs on the wall clock: browsers also pause animation frames without hiding the tab (screen lock,
+  // covered window), and that time must still pay. Long pauses are paid like time away (capped, with a toast).
+  const gap = resume ? 0 : Math.max(0, (now - paidAt) / 1000);
+  last = t; paidAt = now; resume = false;
   if (!W) return requestAnimationFrame(frame); // no layout yet (0-size viewport)
-  const r = rateOf();
-  S.life += r * gap; S.earned += r * gap; // income uses the real gap so slow frames don't lose it; animation uses capped dt
+  if (gap >= 30) away(now - gap * 1000);
+  else { const g = rateOf() * gap; S.life += g; S.earned += g; }
   const heal = healOf(S.earned);
   off = (off + dt * 6) % TW;
   shake = Math.max(0, shake - dt * 3); pulse = Math.max(0, pulse - dt * 1.5); flash = Math.max(0, flash - dt * 1.2);
