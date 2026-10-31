@@ -72,9 +72,9 @@ button:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 /* commander: portrait + speech bubble, bottom left; only the bubble and skip take taps */
 #guide { position: fixed; left: calc(8px + env(safe-area-inset-left)); display: flex; align-items: flex-end; gap: 6px; pointer-events: none; }
 #guide[hidden] { display: none; }
-#gface { width: 228px; flex: none; image-rendering: pixelated; } /* whole multiples of the 76px portrait: 3x */
-@media (min-width: 1200px) and (min-height: 760px) { #gface { width: 304px; } }
-@media (max-width: 600px) { #gface { width: 152px; } #gbubble { font-size: 17px; } }
+#gface { width: 264px; flex: none; image-rendering: pixelated; } /* whole multiples of the 132px portrait: 2x */
+@media (min-width: 1400px) and (min-height: 860px) { #gface { width: 396px; } }
+@media (max-width: 600px) { #gface { width: 176px; } #gbubble { font-size: 17px; } }
 #guide.compact #gface { display: none; } /* panel open: just the bubble */
 #guide.talk #gface { animation: talk .24s steps(1) infinite; }
 @keyframes talk { 50% { transform: translateY(-2px); } }

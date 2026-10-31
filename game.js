@@ -1291,74 +1291,95 @@ function warp() {
 $('warpbtn').addEventListener('click', () => { warp(); save(); });
 
 // ---------- Commander Vos: the story intro and arrival briefings, in a speech bubble at the bottom left ----------
-// Commander Vos: a 3/4 bust in our palette. Shapes are painted flat, snapped to the palette, then outlined dark inside
-// and white outside (the sticker edge the rest of the line art has). Two frames for talking: visor glint and chest light move.
+// Commander Vos: a detailed 3/4 bust in our palette, designed on a 72-unit grid and drawn at 1.75x (132px) so seams, vents and
+// glints get their own pixels. Shapes are painted flat and snapped to the palette; a bevel pass then lights each plate's top-left
+// edge and darkens its bottom-right one; last, a dark inner and a white outer outline (the sticker edge of all our line art).
+// Two frames for talking: visor glint, chest light and ear LED change.
 const VOS_PAL = ['#11131f', '#1c2030', '#323954', '#4a5378', '#59607f', '#6f7aa8', '#8f99c4', '#a7b1d8', '#e9ecf5', '#e98aa3', '#a8566f', '#ffe08a', '#ffb36b'].map(rgb);
+const VOS_RAMP = ['#323954', '#4a5378', '#6f7aa8', '#a7b1d8', '#e9ecf5'].map(rgb).map(String); // dark -> light steps the bevel moves along
 function makeVos(frame) {
-  const N = 76, c = mk(N, N), g = c.getContext('2d', { willReadFrequently: true });
-  g.translate(2, 2); // 2px margin for the outlines
-  const poly = (pts, col) => { g.fillStyle = col; g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.fill(); };
-  const rect = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
-  const P2 = pen(g), line = (x0, y0, x1, y1, col) => P2.line(x0, y0, x1, y1, col);
-  // rifle frame: held across the body, rising toward the bubble
-  const ca = Math.cos(-.3), sa = Math.sin(-.3), R = (x, y) => [35 + x * ca - y * sa, 61 + x * sa + y * ca], rp = (pts, col) => poly(pts.map(q => R(...q)), col);
-  // armour reads light (top-left sun), the rifle dark gunmetal, so the two never blend
-  const A = '#6f7aa8', L = '#a7b1d8', H = '#e9ecf5', S2 = '#4a5378', D = '#323954', K = '#1c2030', PK = '#e98aa3';
-  // shoulders and chest
+  const k = 1.75, M = 3, N = Math.ceil(72 * k) + 2 * M, c = mk(N, N), g = c.getContext('2d', { willReadFrequently: true });
+  const T = (x, y) => [M + x * k, M + y * k];
+  const path = pts => { g.beginPath(); pts.forEach((q, i) => { const [x, y] = T(...q); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); };
+  const poly = (pts, col) => { g.fillStyle = col; path(pts); g.fill(); };
+  const rect = (x, y, w, h, col) => poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], col);
+  const circle = (x, y, r, col) => { g.fillStyle = col; g.beginPath(); g.arc(...T(x, y), r * k, 0, 7); g.fill(); };
+  const P2 = pen(g), line = (x0, y0, x1, y1, col) => P2.line(...T(x0, y0), ...T(x1, y1), col), dot = (x, y, col) => P2.dot(...T(x, y), col);
+  const ca = Math.cos(-.3), sa = Math.sin(-.3), R = (x, y) => [35 + x * ca - y * sa, 64 + x * sa + y * ca]; // rifle frame: across the body, rising
+  const rp = (pts, col) => poly(pts.map(q => R(...q)), col), rl = (a, b, c2, d, col) => line(...R(a, b), ...R(c2, d), col), rd = (x, y, col) => dot(...R(x, y), col);
+  const A = '#6f7aa8', L = '#a7b1d8', H = '#e9ecf5', S2 = '#4a5378', D = '#323954', K = '#1c2030', PK = '#e98aa3', PD = '#a8566f', GM = '#59607f', GL = '#8f99c4';
+  // body
   poly([[2, 50], [12, 40], [60, 38], [70, 48], [70, 72], [2, 72]], D);
   poly([[20, 44], [50, 42], [55, 72], [17, 72]], A); // chest plate
   poly([[22, 46], [34, 45], [32, 54], [21, 56]], L);
-  line(20, 58, 52, 57, K); line(36, 45, 37, 57, K); // plate seams
-  rect(40, 48, 4, 3, frame ? '#a8566f' : PK); rect(41, 49, 2, 1, frame ? PK : H); // chest light
+  line(20, 58, 52, 57, K); line(36, 45, 37, 57, K); line(26, 46, 25, 57, K); // plate seams
+  circle(29.5, 50.5, 2.6, PD); circle(29.5, 50.5, 1.6, PK); line(26.5, 51.5, 32.5, 49.5, H); // emblem: a ringed planet
+  rect(40, 48, 4, 3, frame ? PD : PK); rect(41, 49, 2, 1, frame ? PK : H); // chest light
+  rect(17, 64, 39, 4, D); line(17, 64, 56, 64, K); rect(21, 62, 7, 6, S2); line(21, 64, 28, 64, K); dot(24.5, 66, GL); // belt and pouch
   poly([[1, 50], [8, 40], [22, 38], [29, 44], [27, 58], [16, 66], [4, 64]], A); // left pauldron (lit)
-  poly([[4, 47], [9, 42], [21, 40], [25, 45], [8, 50]], L); line(7, 44, 20, 40, H);
-  poly([[5, 54], [26, 49], [26, 52], [5, 57]], PK); line(4, 63, 16, 65, K);
+  poly([[4, 47], [9, 42], [21, 40], [25, 45], [8, 50]], L);
+  poly([[5, 54], [26, 49], [26, 52], [5, 57]], PK);
+  for (const y of [58, 61]) { line(8, y + 1, 13, y - 1, PK); line(13, y - 1, 18, y + 1, PK); } // rank chevrons
+  for (const [x, y] of [[6, 46], [24, 42], [7, 62]]) dot(x, y, H); // bolts
+  line(4, 63, 16, 65, K);
   poly([[47, 40], [60, 37], [70, 44], [71, 60], [62, 64], [52, 56]], S2); // right pauldron (shade side)
-  poly([[51, 41], [60, 39], [67, 44], [56, 46]], A); line(52, 41, 59, 39, L);
+  poly([[51, 41], [60, 39], [67, 44], [56, 46]], A);
   poly([[54, 52], [70, 50], [70, 53], [54, 55]], PK);
-  rect(28, 34, 16, 10, K); line(31, 38, 41, 38, D); // neck
+  for (const [x, y] of [[57, 42], [68, 47]]) dot(x, y, GL);
+  rect(28, 34, 16, 10, K); line(31, 38, 41, 38, D); line(31, 41, 41, 41, D); line(33, 35, 33, 43, GM); // neck and cables
   // forearms reaching to the rifle
-  poly([[8, 61], [19, 59], [29, 66], [25, 72], [7, 72]], A); line(10, 63, 19, 61, L);
-  poly([[56, 55], [67, 59], [61, 71], [50, 68]], S2); line(58, 57, 65, 60, A);
-  // rifle, dark gunmetal with a bright top edge
-  rp([[-34, -3], [-20, -4], [-20, 5], [-34, 6]], D); rp([[-34, -3], [-20, -4], [-20, -3], [-34, -2]], '#8f99c4'); // stock
-  rp([[-20, -5], [18, -5], [18, 5], [-20, 5]], D); // body
-  rp([[-20, -5], [18, -5], [18, -4], [-20, -4]], '#8f99c4');
-  rp([[-20, 3], [18, 3], [18, 5], [-20, 5]], K);
-  rp([[-8, -2], [14, -2], [14, 1], [-8, 1]], S2); // receiver panel
-  rp([[18, -3], [31, -3], [31, 1], [18, 1]], K); rp([[31, -4], [34, -4], [34, 2], [31, 2]], S2); // barrel, muzzle
-  rp([[-6, -10], [8, -10], [8, -5], [-6, -5]], K); rp([[-6, -10], [8, -10], [8, -9], [-6, -9]], '#59607f'); rp([[6, -9], [8, -9], [8, -6], [6, -6]], PK); // scope
-  rp([[-4, 5], [3, 5], [5, 14], [-2, 14]], K); // magazine
-  rp([[-17, -1], [-11, -1], [-11, 1], [-17, 1]], PK);
-  rp([[8, 1], [16, 1], [16, 9], [8, 9]], K); rp([[9, 2], [15, 2], [15, 3], [9, 3]], A); // front glove
-  rp([[-19, -2], [-11, -2], [-11, 8], [-19, 8]], K); rp([[-18, -1], [-12, -1], [-12, 0], [-18, 0]], A); // back glove
-  // helmet: round shell, shaded on the right, crest ridge kept inside the silhouette
+  poly([[8, 61], [19, 59], [29, 66], [25, 72], [7, 72]], A); line(13, 61, 18, 69, K); line(20, 60, 25, 68, K);
+  poly([[56, 55], [67, 59], [61, 71], [50, 68]], S2); line(59, 57, 54, 69, K);
+  // rifle: dark gunmetal, bright top edge, rail, vents, scope
+  rp([[-34, -3], [-20, -4], [-20, 5], [-34, 6]], D); rp([[-34, -3], [-20, -4], [-20, -3], [-34, -2]], GL); rl(-30, -1, -30, 4, K); // stock
+  rp([[-20, -5], [18, -5], [18, 5], [-20, 5]], D); rp([[-20, -5], [18, -5], [18, -4], [-20, -4]], GL); rp([[-20, 3], [18, 3], [18, 5], [-20, 5]], K);
+  rp([[-16, -7], [14, -7], [14, -5], [-16, -5]], S2); for (let x = -14; x < 14; x += 5) rl(x, -7, x, -6, K); // top rail
+  rp([[-8, -2], [14, -2], [14, 1], [-8, 1]], S2); for (let x = -4; x < 14; x += 5) rl(x, -2, x, 0, K); // receiver vents
+  rp([[18, -3], [31, -3], [31, 1], [18, 1]], K); rp([[31, -4], [34, -4], [34, 2], [31, 2]], S2); rl(32.5, -3, 32.5, 1, K); // barrel, muzzle brake
+  rp([[-6, -12], [8, -12], [8, -7], [-6, -7]], K); rp([[-6, -12], [8, -12], [8, -11], [-6, -11]], GM); rp([[6, -11], [8, -11], [8, -8], [6, -8]], PK); rd(7, -10, H); // scope
+  rp([[-4, 5], [3, 5], [5, 14], [-2, 14]], K); for (const y of [8, 11]) rl(-2.5, y, 3.5, y, D); // magazine ribs
+  rp([[-17, -1], [-11, -1], [-11, 1], [-17, 1]], PK); rd(-9, 0, frame ? PD : PK);
+  rp([[8, 1], [16, 1], [16, 9], [8, 9]], K); rp([[9, 2], [15, 2], [15, 3], [9, 3]], A); rl(12, 4, 12, 8, D); // front glove
+  rp([[-19, -2], [-11, -2], [-11, 8], [-19, 8]], K); rp([[-18, -1], [-12, -1], [-12, 0], [-18, 0]], A); rl(-15, 1, -15, 7, D); // back glove
+  // helmet: round shell, shaded on the right, crest ridge with vents
   poly([[20, 13], [23, 6], [30, 2], [44, 2], [51, 6], [55, 13], [56, 25], [53, 33], [47, 39], [27, 39], [21, 33], [19, 25]], A);
   poly([[47, 5], [51, 6], [55, 13], [56, 25], [53, 33], [47, 39], [44, 39], [50, 30], [52, 20], [50, 10]], S2);
-  poly([[23, 10], [29, 4], [35, 3], [34, 8], [26, 13]], L); line(26, 7, 31, 4, H);
-  poly([[35, 2], [39, 2], [39, 15], [35, 15]], S2); line(36, 3, 36, 14, L); // crest ridge
+  poly([[23, 10], [29, 4], [35, 3], [34, 8], [26, 13]], L);
+  poly([[35, 2], [39, 2], [39, 15], [35, 15]], S2); for (const y of [6, 9, 12]) line(35.5, y, 38.5, y, K); // crest vents
+  line(51, 8, 54, 22, K); line(22, 30, 26, 37, K); // shell seams
   line(23, 17, 51, 15, K); // brow
   const visor = [[24, 18], [50, 16], [53, 23], [48, 30], [30, 30], [24, 26]];
-  g.save(); g.beginPath(); visor.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.clip();
-  rect(20, 14, 36, 4, '#ffe08a'); rect(20, 18, 36, 4, '#ffb36b'); rect(20, 22, 36, 4, PK); rect(20, 26, 36, 6, '#a8566f'); // sunset visor
+  g.save(); path(visor); g.clip();
+  rect(20, 14, 36, 4, '#ffe08a'); rect(20, 18, 36, 4, '#ffb36b'); rect(20, 22, 36, 4, PK); rect(20, 26, 36, 6, PD); // sunset visor
+  circle(44, 29, 4, '#ffb36b'); circle(44, 29, 3, PK); // a planet reflected low in the visor
   g.restore();
-  g.strokeStyle = '#11131f'; g.beginPath(); visor.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.stroke();
-  if (frame) line(38, 19, 44, 18, H); else { line(27, 20, 33, 19, H); P2.dot(35, 19, H); } // glint
+  g.strokeStyle = '#11131f'; g.lineWidth = 1.5; path(visor); g.stroke();
+  if (frame) { line(37, 19, 44, 18, H); line(46, 18, 47, 18, H); } else { line(27, 20, 33, 19, H); dot(35, 19, H); line(28, 22, 30, 22, H); } // glints
   poly([[23, 27], [30, 31], [48, 31], [54, 25], [53, 32], [47, 39], [28, 39], [22, 33]], D); // jaw guard
-  for (const y of [34, 36]) { line(31, y, 35, y, K); line(39, y, 43, y, K); } // vents
-  line(24, 30, 29, 33, A);
-  poly([[16, 18], [22, 17], [22, 31], [16, 30]], L); rect(17, 21, 3, 6, D); line(16, 18, 16, 29, H); // ear module
-  line(17, 18, 12, 4, L); P2.dot(12, 3, PK); // antenna
-  // snap to the palette, then outline: dark on the silhouette's inner edge, white just outside it
-  const im = g.getImageData(0, 0, N, N), d = im.data, solid = new Uint8Array(N * N);
+  for (const y of [33, 35, 37]) { line(30, y, 34, y, K); line(40, y, 44, y, K); } // vents
+  line(37, 31, 37, 38, K);
+  poly([[16, 18], [22, 17], [22, 31], [16, 30]], L); rect(17, 21, 3, 6, D); dot(18.5, 28, frame ? PD : PK); // ear module and LED
+  line(17, 18, 12, 4, L); dot(15.5, 13, K); dot(14, 9, K); dot(12, 3, PK); dot(12, 2, PK); // segmented antenna
+  // snap to the palette, bevel the armour, then outline
+  const im = g.getImageData(0, 0, N, N), d = im.data, solid = new Uint8Array(N * N), col = new Array(N * N);
   for (let i = 0; i < N * N; i++) {
-    if (d[i * 4 + 3] < 128) { d[i * 4 + 3] = 0; continue; }
+    if (d[i * 4 + 3] < 128) continue;
     solid[i] = 1;
     let best = VOS_PAL[0], bd = 1e9;
     for (const p of VOS_PAL) { const e = (p[0] - d[i * 4]) ** 2 + (p[1] - d[i * 4 + 1]) ** 2 + (p[2] - d[i * 4 + 2]) ** 2; if (e < bd) { bd = e; best = p; } }
-    d.set([...best, 255], i * 4);
+    col[i] = best;
   }
   const at = (x, y) => x >= 0 && y >= 0 && x < N && y < N && solid[y * N + x];
+  const gap = (x, y) => !at(x, y) || String(col[y * N + x]) === String(rgb('#1c2030')); // empty space or a seam
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const i = y * N + x;
+    if (!solid[i]) { d[i * 4 + 3] = 0; continue; }
+    let p = col[i];
+    const r = VOS_RAMP.indexOf(String(p));
+    if (r >= 0 && (gap(x - 1, y) || gap(x, y - 1)) && r < VOS_RAMP.length - 1) p = VOS_RAMP[r + 1].split(',').map(Number); // lit edge
+    else if (r > 0 && (gap(x + 1, y) || gap(x, y + 1))) p = VOS_RAMP[r - 1].split(',').map(Number); // shadow edge
+    d.set([...p, 255], i * 4);
+  }
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const i = y * N + x, edge = !at(x - 1, y) || !at(x + 1, y) || !at(x, y - 1) || !at(x, y + 1);
     if (solid[i] && edge) d.set([17, 19, 31, 255], i * 4);

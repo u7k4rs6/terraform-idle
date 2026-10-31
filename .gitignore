@@ -3,3 +3,6 @@
 screenshot-recreation/
 WhatsApp Image *.jpeg
 Talent.jpeg
+.trailer-kit/
+trailer/node_modules/
+trailer/out/
