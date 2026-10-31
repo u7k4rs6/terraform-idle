@@ -989,8 +989,8 @@ function closeTalents() {
   if (talOpener?.isConnected && talOpener !== document.body) talOpener.focus({ preventScroll: true });
 }
 $('tclose').addEventListener('click', closeTalents);
-const talTile = document.createElement('button'); // last tile in the bottom bar
-talTile.className = 'tile'; talTile.setAttribute('aria-label', 'Talents'); talTile.setAttribute('aria-controls', 'talents');
+const talTile = document.createElement('button'); // own tile in the bar's bottom-right corner, apart from the systems
+talTile.className = 'tile'; talTile.id = 'ttile'; talTile.setAttribute('aria-label', 'Talents'); talTile.setAttribute('aria-controls', 'talents');
 talTile.innerHTML = `<img src="${src(TI.sprout)}" alt="">`;
 talTile.addEventListener('click', openTalents);
 $('bar').append(talTile);

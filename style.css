@@ -38,6 +38,9 @@ button:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 .tile { position: relative; flex: 1 1 0; max-width: 64px; height: 60px; background: var(--bg); display: grid; place-items: center; }
 .tile img { image-rendering: pixelated; max-width: 100%; max-height: 46px; } /* shrink only when a tile is narrower than the icon */
 .tile.sel { outline: 2px solid var(--line); }
+#ttile img { width: 27px; } /* 9px icon at 3x */
+#ttile { position: absolute; top: 12px; right: calc(12px + env(safe-area-inset-right)); width: 64px; max-width: none; } /* talents: bottom-right corner, apart from the systems */
+@media (max-width: 640px) { #bar { padding-right: calc(88px + env(safe-area-inset-right)); } } /* narrow: keep the systems clear of it */
 
 /* upgrade sheet + arrows to step between systems */
 #panel { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(560px, 100%); max-height: 56vh; overflow-y: auto; background: var(--deep); border-top: 2px solid var(--pink); padding-bottom: env(safe-area-inset-bottom); }
