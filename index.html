@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Terraform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="c" aria-label="Your planet, the colony below it and the systems around it. Tap the planet to collect life, tap a system to open it."></canvas>
+<header id="top">
+  <button id="goal"><span id="gtext"></span><span id="grew"></span></button>
+</header>
+<div id="toast" role="status" aria-live="polite"></div>
+<aside id="side">
+  <div class="box"><div id="life"></div><div id="rate"></div></div>
+  <div class="box"><div id="wname"></div><div id="heal" role="progressbar" aria-label="Terraformed" aria-valuemin="0" aria-valuemax="100"><div id="healbar"></div></div><div id="healtxt"></div></div>
+</aside>
+<nav id="bar" aria-label="Systems"></nav>
+<button id="prev" class="arrow" aria-label="Previous system" hidden>&lt;</button>
+<button id="next" class="arrow" aria-label="Next system" hidden>&gt;</button>
+<section id="panel" aria-labelledby="pname" hidden>
+  <div id="phead"><b id="pname"></b><span id="pinfo"></span><button id="pclose" aria-label="Close">X</button></div>
+  <div id="prows"></div>
+  <p id="pfact" class="fact"></p>
+</section>
+<div id="warp" role="dialog" aria-modal="true" aria-labelledby="warph" hidden>
+  <div class="box"><h2 id="warph">Planet terraformed</h2><p id="warptxt"></p><button id="warpbtn">Warp to next world &gt;&gt;</button></div>
+</div>
+<script src="game.js"></script>
+</body>
+</html>
