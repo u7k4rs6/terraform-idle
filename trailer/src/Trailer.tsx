@@ -65,7 +65,7 @@ const Footage: React.FC<{ at: number, len: number, zoom?: [number, number], focu
     const clip = (style: React.CSSProperties, muted: boolean) => <OffthreadVideo src={VIDEO} trimBefore={Math.round(at * FPS)} playbackRate={rate} volume={muted ? 0 : volume} muted={muted} style={style} />
     return (
       <AbsoluteFill>
-        {L.tall && <AbsoluteFill style={{ overflow: 'hidden' }}>{clip({ position: 'absolute', height: '100%', left: '50%', transform: 'translateX(-50%) scale(1.2)', filter: 'blur(30px) brightness(.4) saturate(1.3)' }, true)}</AbsoluteFill>}
+        {L.tall && <Stars />}{/* not a blurred second copy of the footage: decoding it twice per frame crashed an 8 GB laptop */}
         <div style={{ position: 'absolute', left: L.vid.x, top: L.vid.y, width: L.vid.w, height: L.vid.h, overflow: 'hidden', boxShadow: L.tall ? `0 0 0 ${4 * L.u}px ${C.line}` : undefined }}>
           <div style={{ position: 'absolute', inset: 0, transform: `scale(${k})`, transformOrigin: `${focus[0] * 100}% ${focus[1] * 100}%` }}>
             {clip({ width: '100%', height: '100%' }, false)}
