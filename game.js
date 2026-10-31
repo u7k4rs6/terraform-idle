@@ -1371,6 +1371,10 @@ function frame(ms) {
   requestAnimationFrame(frame);
 }
 
+if (new URLSearchParams(location.search).has('reset')) { // ?reset: start over (demos, judges); runs after the old page saved on its way out
+  try { localStorage.removeItem(SAVE); } catch { /* storage blocked: nothing saved anyway */ }
+  history.replaceState(null, '', location.pathname); // a later reload keeps the new game
+}
 load();
 updateUI();
 resize();
