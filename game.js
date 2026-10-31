@@ -1,7 +1,7 @@
 'use strict';
 
 // Muted slate night, white line-art, soft pink accents.
-const C = { bg: '#2b3047', deep: '#1f2333', line: '#e9ecf5', dim: '#59607f', dot: '#6f79a3', soft: '#8f99c4', pink: '#e98aa3', sil: '#1c2030' };
+const C = { bg: '#2b3047', deep: '#1f2333', line: '#e9ecf5', dim: '#59607f', dot: '#6f79a3', soft: '#8f99c4', pink: '#e98aa3', sil: '#1c2030', sun: '#ffe08a' };
 
 // Systems in unlock order. Each has 3 upgrades (max Lv 50):
 // [0] +1 crew, [1] +25% output per level, [2] x1.08 output per level (compounding).
@@ -494,10 +494,16 @@ function text(str, x, y, col = C.line) { // centred on x, bottom at y+5; dark sh
 function fire(s, real) {
   const a = Math.PI + Math.random() * Math.PI, d = R * .8 * Math.sqrt(Math.random()); // upper half: the lower half hides behind the colony
   const tx = CX + Math.cos(a) * d, ty = CY + Math.sin(a) * d, [sx, sy] = muzzle(s), shot = SYS[s].shot;
-  if (shot === 'beam' || shot === 'light') {
-    beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: shot === 'light' ? C.line : C.pink });
-    return land(s, tx, ty, real);
+  if (shot === 'light') { // sunlight from above lands on both mirror panels, then one reflected beam heats the planet
+    for (const px of [-21, 20]) {
+      beams.push({ x1: sx + px - 26, y1: 0, x2: sx + px, y2: sy - 9, life: 1, col: C.sun, w: 2, a: .55, fade: 2 });
+      burst(sx + px, sy - 9, [C.sun, C.line], 3, 12); // glint on the panel
+    }
+    beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.sun, w: 2, end: true, fade: 2.5, delay: .15 }); // reflection follows a beat later
+    setTimeout(() => land(s, tx, ty, real), 150);
+    return;
   }
+  if (shot === 'beam') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.pink, end: true }); return land(s, tx, ty, real); }
   if (shot === 'pulse') { pulses.push({ r: R * .2, life: 1 }); return land(s, tx, ty, real); }
   shots.push({ s, sx, sy, tx, ty, t: 0, dur: .7 + Math.random() * .3, real });
 }
@@ -636,7 +642,12 @@ function draw(t, heal) {
     else if (shot === 'drone') blit(T.drone, x, y);
     else { P.fill(x - 1, y - 1, 2, 2, C.line); parts.push({ x, y, vx: 0, vy: 0, life: .4, color: C.soft }); }
   }
-  for (const b of beams) { ctx.globalAlpha = b.life; P.line(b.x1, b.y1, b.x2, b.y2, b.col); P.fill(b.x2 - 1, b.y2 - 1, 3, 3, C.line); }
+  for (const b of beams) { // w = width in pixels, a = opacity, end = flash at the impact point
+    if (b.delay > 0) continue;
+    ctx.globalAlpha = b.life * (b.a || 1);
+    for (let o = 0; o < (b.w || 1); o++) P.line(b.x1 + o, b.y1, b.x2 + o, b.y2, b.col);
+    if (b.end) P.fill(b.x2 - 1, b.y2 - 1, 3, 3, C.line);
+  }
   for (const q of parts) { ctx.globalAlpha = q.life; P.dot(q.x, q.y, q.color); }
   for (const f of floats) { ctx.globalAlpha = f.life; text(f.text, f.x, f.y, f.col); }
   ctx.globalAlpha = 1;
@@ -835,7 +846,7 @@ cv.addEventListener('pointerdown', e => {
   if ((x - CX) ** 2 + (y - CY) ** 2 > R * R) return closePanel();
   const g = tapOf(rateOf());
   S.life += g; S.earned += g; S.taps++;
-  if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.pink }); }
+  if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.pink, end: true }); }
   burst(x, y, [C.line, C.pink], 10);
   floats.push({ x, y: y - 8, text: '+' + fmt(g), life: 1 });
 });
@@ -873,7 +884,7 @@ function frame(ms) {
   for (const p of pulses) { p.r += R * 1.4 * dt; p.life -= dt * 1.2; }
   for (const q of parts) { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= .95; q.vy *= .95; q.life -= dt * 1.4; }
   for (const f of floats) { f.y -= 16 * dt; f.life -= dt * 1.2; }
-  for (const b of beams) b.life -= dt * 5;
+  for (const b of beams) if (b.delay > 0) b.delay -= dt; else b.life -= dt * (b.fade || 5);
   for (const a of [parts, floats, beams, pulses]) a.splice(0, a.length, ...a.filter(q => q.life > 0));
 
   draw(t, heal);
