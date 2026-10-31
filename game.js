@@ -52,23 +52,25 @@ const unlocked = s => s === 0 || S.on[s - 1];
 const items = []; // life patches on the planet: { u, v (texture coords), born }
 const pct = () => Math.floor(healOf(S.earned) * 100);
 
-// Always one clear next step at the top, with a reward: [text, progress, target, reward].
+// Always one clear next step at the top, with a reward: [text, progress, target, reward, go].
+// go: the system a tap on the unfinished goal jumps to (-1 = back to the planet); a function picks it at tap time.
+const topSys = () => S.L.reduce((b, L, s) => (Math.max(...L) > Math.max(...S.L[b]) ? s : b), 0); // furthest-upgraded system
 const GOALS = [
-  ['Tap the planet 10 times', () => S.taps, 10, 50],
-  ['Unlock the Laser Station', () => +S.on[0], 1, 50],
-  ['Recruit 5 gunners', () => S.L[0][0], 5, 200],
-  ['Unlock the Solar Mirror', () => +S.on[1], 1, 500],
-  ['Stabilized Optics to Lv 5', () => S.L[0][1], 5, 1000],
-  ['Terraform 25%', pct, 25, 3000],
-  ['Unlock the Drone Hive', () => +S.on[2], 1, 6000],
-  ['Get any upgrade to Lv 20', () => Math.max(...S.L.flat()), 20, 2e4],
-  ['Unlock the Comet Launcher', () => +S.on[3], 1, 5e4],
-  ['Terraform 50%', pct, 50, 1e5],
-  ['Unlock the Bio Seeder', () => +S.on[4], 1, 1e6],
-  ['Terraform 75%', pct, 75, 3e6],
-  ['Unlock the Terra Core', () => +S.on[5], 1, 2e7],
-  ['Terraform 100%', pct, 100, 0],
-].map(([text, get, need, reward]) => ({ text, get, need, reward }));
+  ['Tap the planet 10 times', () => S.taps, 10, 50, -1],
+  ['Unlock the Laser Station', () => +S.on[0], 1, 50, 0],
+  ['Recruit 5 gunners', () => S.L[0][0], 5, 200, 0],
+  ['Unlock the Solar Mirror', () => +S.on[1], 1, 500, 1],
+  ['Stabilized Optics to Lv 5', () => S.L[0][1], 5, 1000, 0],
+  ['Terraform 25%', pct, 25, 3000, -1],
+  ['Unlock the Drone Hive', () => +S.on[2], 1, 6000, 2],
+  ['Get any upgrade to Lv 20', () => Math.max(...S.L.flat()), 20, 2e4, topSys],
+  ['Unlock the Comet Launcher', () => +S.on[3], 1, 5e4, 3],
+  ['Terraform 50%', pct, 50, 1e5, -1],
+  ['Unlock the Bio Seeder', () => +S.on[4], 1, 1e6, 4],
+  ['Terraform 75%', pct, 75, 3e6, -1],
+  ['Unlock the Terra Core', () => +S.on[5], 1, 2e7, 5],
+  ['Terraform 100%', pct, 100, 0, -1],
+].map(([text, get, need, reward, go]) => ({ text, get, need, reward, go }));
 
 // Worlds in warp order. Each heals from `dead` tones into its own alien palette; dg/ag = dead/alive atmosphere glow.
 const WORLDS = [
@@ -84,7 +86,7 @@ const WORLDS = [
   { name: 'GLASS STORM', sea: ['#0c2a7a', '#1440a8'], coast: '#bff4ff', land: ['#3fd0ff', '#9ef0ff'], caps: '#ffffff',
     dead: [[24, 30, 46], [40, 50, 72], [64, 78, 104], [100, 116, 140]], crater: '#141a2a', dg: [130, 145, 180], ag: [110, 190, 255],
     fact: 'On HD 189733 b it rains glass, blown sideways by winds of about 8,700 km/h.' },
-  { name: 'INFERNO', sea: ['#5a1a6a', '#7a2a8a'], coast: '#ffd166', land: ['#ff9f1c', '#e8a33c'], caps: '#fff1c9', // only coast + caps are bright enough to become lava when dead
+  { name: 'INFERNO', sea: ['#5a1a6a', '#7a2a8a'], coast: '#ffd166', land: ['#ff9f1c', '#e8a33c'], caps: '#fff1c9', lava: true, // lava: dead[3] glows in the cracks instead of lighting crater rims
     dead: [[16, 12, 14], [34, 24, 24], [60, 30, 24], [255, 110, 30]], crater: '#000000', dg: [255, 120, 60], ag: [255, 200, 110],
     fact: '55 Cancri e is so close to its star that its dayside may be one huge ocean of lava.' },
 ];
@@ -165,6 +167,17 @@ function art(w, h, paint) {
 }
 const B4 = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]; // Bayer matrix for ordered dithering
 const hash = (x, y, s = 0) => { let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(s + 1, 1442695041); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+// Smooth value noise that wraps across the planet map's width (cell = lattice size in texels, must divide TW).
+function vnoise(x, y, cell, seed) {
+  const n = TW / cell, gx = x / cell, gy = y / cell, x0 = Math.floor(gx), y0 = Math.floor(gy), fx = gx - x0, fy = gy - y0;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), h = (i, j) => hash((i % n + n) % n, j, seed);
+  return (h(x0, y0) * (1 - sx) + h(x0 + 1, y0) * sx) * (1 - sy) + (h(x0, y0 + 1) * (1 - sx) + h(x0 + 1, y0 + 1) * sx) * sy;
+}
+const fbm = (x, y, seed) => vnoise(x, y, 32, seed) * .5 + vnoise(x, y, 16, seed + 1) * .3 + vnoise(x, y, 8, seed + 2) * .2;
+// Smooth two-octave noise sampled through a second noise field: big cartoon shapes whose contours curl into swirls
+const soft = (x, y, seed) => vnoise(x, y, 32, seed) * .62 + vnoise(x, y, 16, seed + 1) * .38;
+const swirl = (x, y, seed) => soft(x + 70 * (soft(x, y, seed + 3) - .5), y + 36 * (soft(x + 50, y, seed + 7) - .5), seed);
+const rgb = s => [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16));
 // Locked look derived from the lit sprite: noisy dark fill, dim outline (dotted when not yet unlockable).
 function shadow(src, dotted) {
   const w = src.width, h = src.height, d = src.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data, c = mk(w, h), g = c.getContext('2d');
@@ -302,37 +315,63 @@ const GLYPH = { 0: '111101101101111', 1: '010110010010111', 2: '111001111100111'
 // ---------- planet textures ----------
 const TW = 256, TH = 128; // planet surface as a 2:1 wrap-around map
 
-function makeLush(w, seed) {
-  const c = mk(TW, TH), g = c.getContext('2d');
-  const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
-  const blob = (x, y, r) => { for (const dx of [-TW, 0, TW]) { g.beginPath(); g.arc(x + dx, y, r, 0, 7); g.fill(); } };
-  g.fillStyle = w.sea[0]; g.fillRect(0, 0, TW, TH);
-  g.fillStyle = w.sea[1]; for (let j = 0; j < 30; j++) blob(rnd() * TW, rnd() * TH, 6 + rnd() * 14);
-  for (let k = 0; k < 10; k++) {
-    const x = rnd() * TW, y = 20 + rnd() * (TH - 40), s0 = seed;
-    g.fillStyle = w.coast; // coast, then the same blobs again smaller as land
-    for (let j = 0; j < 9; j++) blob(x + (rnd() - .5) * 50, y + (rnd() - .5) * 30, 6 + rnd() * 9);
-    seed = s0;
-    for (let j = 0; j < 9; j++) { g.fillStyle = w.land[j % 3 ? 0 : 1]; blob(x + (rnd() - .5) * 50, y + (rnd() - .5) * 30, 4 + rnd() * 8); }
-  }
-  g.fillStyle = w.caps; g.fillRect(0, 0, TW, 7); g.fillRect(0, TH - 6, TW, 6); // polar caps
-  for (let j = 0; j < 50; j++) blob(rnd() * TW, j % 2 ? 7 : TH - 6, 2 + rnd() * 4);
+// Fills a TW x TH map texel by texel: paint(x, y) returns [r, g, b].
+function texMap(paint) {
+  const c = mk(TW, TH), g = c.getContext('2d'), im = g.createImageData(TW, TH), d = im.data;
+  for (let y = 0, j = 0; y < TH; y++) for (let x = 0; x < TW; x++, j += 4) { const p = paint(x, y); d[j] = p[0]; d[j + 1] = p[1]; d[j + 2] = p[2]; d[j + 3] = 255; }
+  g.putImageData(im, 0, 0);
   return c;
 }
+// Swirl noise for the whole map, plus a quantile picker (q(.5) = the median), so shares of sea/land stay fixed per world.
+function field(seed) {
+  const e = new Float32Array(TW * TH);
+  for (let y = 0; y < TH; y++) for (let x = 0; x < TW; x++) e[y * TW + x] = swirl(x, y, seed);
+  const sorted = Float32Array.from(e).sort();
+  return { e, q: p => sorted[Math.floor(p * (e.length - 1))] };
+}
+const frac = v => v - Math.floor(v);
 
-// Dead copy of the lush map, posterised into the world's 4 dead tones.
-function makeDead(src, w) {
-  const c = mk(TW, TH), g = c.getContext('2d');
-  g.drawImage(src, 0, 0);
-  const d = g.getImageData(0, 0, TW, TH), a = d.data;
-  for (let i = 0; i < a.length; i += 4) {
-    const t = w.dead[Math.min(3, Math.floor((a[i] * .3 + a[i + 1] * .59 + a[i + 2] * .11) / 64))];
-    a[i] = t[0]; a[i + 1] = t[1]; a[i + 2] = t[2];
+// Alive map: swirling seas with current lines, a bright coast, two-tone land, ragged polar caps.
+function makeLush(w, seed) {
+  const { e, q } = field(seed), sea = q(.5), shore = q(.55), high = q(.84);
+  const [s0, s1, co, l0, l1, cap] = [w.sea[0], w.sea[1], w.coast, w.land[0], w.land[1], w.caps].map(rgb);
+  return texMap((x, y) => {
+    const v = e[y * TW + x], lat = Math.abs((y + .5) / TH - .5) * 2;
+    if (lat > .9 + .08 * (vnoise(x, y, 8, seed + 9) - .5)) return cap;
+    if (v < sea) return frac(v * 16) < .16 ? s1 : s0; // contour lines on the water read as swirling currents
+    return v < shore ? co : v > high || frac(v * 16) < .1 ? l1 : l0; // highlands, plus swirl strokes across the land
+  });
+}
+
+// Dead map: banded rock in the world's dead tones, shaded craters lit from the top-left, and cracks (glowing on lava worlds).
+function makeDead(w, seed) {
+  const { e, q } = field(seed + 40), t1 = q(.3), t2 = q(.72), D = w.dead, pit = rgb(w.crater), lit = w.lava ? D[2] : D[3];
+  const map = new Uint8Array(TW * TH), forks = []; // map: tone per texel, 0..3 = dead[k], 4 = crater colour
+  for (let i = 0; i < map.length; i++) { const v = e[i]; map[i] = (v < t1 ? 0 : v < t2 ? 1 : 2) - (frac(v * 12) < .1 && v >= t1 ? 1 : 0); } // strata lines one tone darker
+  const put = (x, y, k) => { x = Math.round(x); y = Math.round(y); if (y >= 0 && y < TH) map[y * TW + (x % TW + TW) % TW] = k; };
+  const litK = w.lava ? 2 : 3;
+  for (let n = 0; n < 28; n++) { // craters, mostly small
+    const r = 2 + 8 * hash(n, 1, seed) ** 2, cx = hash(n, 2, seed) * TW, cy = 14 + hash(n, 3, seed) * (TH - 28);
+    for (let dy = -Math.ceil(r + 2); dy <= r + 2; dy++) for (let dx = -Math.ceil(r + 2); dx <= r + 2; dx++) {
+      const d = Math.hypot(dx, dy);
+      if (d < r) put(cx + dx, cy + dy, Math.hypot(dx - .35 * r, dy - .35 * r) > r ? 4 : d > r - 1.5 && dx + dy > 0 ? litK : 0); // shadowed top-left wall, lit bottom-right wall
+      else if (d < r + 1.2) put(cx + dx, cy + dy, dx + dy < 0 ? litK : 0); // rim: lit toward the sun
+    }
   }
-  g.putImageData(d, 0, 0);
-  g.fillStyle = w.crater;
-  for (let j = 0; j < 40; j++) { const x = (j * 97) % TW, y = 12 + (j * 53) % (TH - 24); g.fillRect(x, y, 3, 2); g.fillRect(x + 1, y - 1, 1, 1); }
-  return c;
+  let s = seed;
+  const rnd = () => (s = s * 16807 % 2147483647) / 2147483647;
+  for (let n = 0; n < 12; n++) { // cracks: wandering lines that sometimes fork
+    let x = rnd() * TW, y = 16 + rnd() * (TH - 32), a = rnd() * 7;
+    for (let k = 0, len = 20 + rnd() * 40; k < len; k++) {
+      a += (rnd() - .5) * .9; x += Math.cos(a); y += Math.sin(a) * .7;
+      put(Math.round(x), Math.round(y), w.lava ? 3 : 4);
+      if (w.lava) put(Math.round(x), Math.round(y) + 1, 2); // glow under the lava line
+      if (rnd() < .04) forks.push([x, y, a + (rnd() < .5 ? 1 : -1)]);
+    }
+  }
+  for (const [x0, y0, a0] of forks) { let x = x0, y = y0, a = a0; for (let k = 0; k < 12; k++) { a += (rnd() - .5) * .9; x += Math.cos(a); y += Math.sin(a) * .7; put(Math.round(x), Math.round(y), w.lava ? 3 : 4); } }
+  const tone = [...D, pit];
+  return texMap((x, y) => tone[map[y * TW + x]]);
 }
 
 function makeClouds() {
@@ -347,46 +386,79 @@ function makeClouds() {
   return c;
 }
 
-let lush, dead;
-const mask = mk(TW, TH), comp = mk(TW, TH), clouds = makeClouds();
-function buildWorld() { lush = makeLush(world(), 11 + S.world * 7); dead = makeDead(lush, world()); }
+let lush, dead, lushPx, deadPx, midPx, fieldPx, fieldKey;
+const mask = mk(TW, TH), comp = mk(TW, TH), clouds = makeClouds(), compImg = comp.getContext('2d').createImageData(TW, TH);
+// thr: the heal level at which each texel comes alive (smooth noise ranked into an even 0..1 spread, so the alive share
+// of the planet always equals heal and grows continuously); rim: ragged edge of the purchase patches
+const thr = new Float32Array(TW * TH), rim = new Float32Array(TW * TH);
+function buildWorld() {
+  const w = world(), seed = 11 + S.world * 7, px = c => c.getContext('2d').getImageData(0, 0, TW, TH).data;
+  lush = makeLush(w, seed); dead = makeDead(w, seed);
+  lushPx = px(lush); deadPx = px(dead); midPx = lushPx.map((v, i) => (v + deadPx[i]) >> 1); // mid: the growth front
+  const v = new Float32Array(TW * TH);
+  for (let y = 0, i = 0; y < TH; y++) for (let x = 0; x < TW; x++, i++) { v[i] = fbm(x, y, seed + 90); rim[i] = .2 + .55 * vnoise(x, y, 4, seed + 95); }
+  [...v.keys()].sort((a, b) => v[a] - v[b]).forEach((i, r) => { thr[i] = r / v.length; });
+  fieldKey = '';
+}
 buildWorld();
 
 function compose(t, heal) {
-  const m = mask.getContext('2d');
-  m.globalCompositeOperation = 'source-over';
-  m.clearRect(0, 0, TW, TH);
-  if (heal >= 1) m.fillRect(0, 0, TW, TH);
-  else for (const it of items.slice(-150)) { // newest patches: every purchase keeps showing up
-    const r = (9 + 34 * heal * heal) * Math.min(1, (t - it.born) / 1.5);
-    for (const dx of [-TW, 0, TW]) { m.beginPath(); m.arc(it.u + dx, it.v, r, 0, 7); m.fill(); }
+  // purchase patches: soft discs (drawn only when they change) that grow in over 2s and widen as the planet heals
+  const r = 10 + 14 * heal, live = items.slice(-150), growing = live.some(it => t - it.born < 2);
+  const key = live.length + '|' + Math.round(r * 2) + '|' + (live.at(-1)?.u ?? '');
+  if (growing || key !== fieldKey) {
+    const m = mask.getContext('2d', { willReadFrequently: true });
+    m.clearRect(0, 0, TW, TH);
+    for (const it of live) {
+      const ri = r * Math.min(1, Math.max(0, (t - it.born) / 2)) ** .5;
+      if (ri < 1) continue;
+      for (const dx of [-TW, 0, TW]) {
+        const x = it.u + dx;
+        if (x < -ri || x > TW + ri) continue;
+        const gr = m.createRadialGradient(x, it.v, 0, x, it.v, ri);
+        gr.addColorStop(0, '#000'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        m.fillStyle = gr; m.fillRect(x - ri, it.v - ri, ri * 2, ri * 2);
+      }
+    }
+    fieldPx = m.getImageData(0, 0, TW, TH).data; fieldKey = key;
   }
-  m.globalCompositeOperation = 'source-in';
-  m.drawImage(lush, 0, 0);
-  const c = comp.getContext('2d');
-  c.drawImage(dead, 0, 0);
-  c.drawImage(mask, 0, 0);
+  const o = compImg.data;
+  for (let i = 0, j = 3; i < thr.length; i++, j += 4) {
+    const f = fieldPx[j] / 255, src = thr[i] < heal || f > rim[i] ? lushPx : thr[i] < heal + .015 || f > rim[i] - .08 ? midPx : deadPx;
+    o[j - 3] = src[j - 3]; o[j - 2] = src[j - 2]; o[j - 1] = src[j - 1]; o[j] = 255;
+  }
+  comp.getContext('2d').putImageData(compImg, 0, 0);
 }
 
 // ---------- layout ----------
 // The scene is drawn 1:1 into a low-res buffer, then scaled onto the screen with nearest-neighbour, so it stays sharp at any zoom.
 const $ = id => document.getElementById(id);
 const cv = $('c'), out = cv.getContext('2d'), panel = $('panel'), buf = mk(1, 1), ctx = buf.getContext('2d'), P = pen(ctx);
-// Systems sit on one ring just outside the atmosphere, evenly spaced across the upper half (angle in degrees,
-// 0 = right, -90 = straight up). The comet launcher stands on the colony ground instead, at x planet radii from centre.
-const ORBIT = 1.32;
+// film grain tile in device pixels (laid over the scaled scene, so specks stay one screen pixel at any zoom)
+const grainPat = out.createPattern((() => {
+  const c = mk(256, 256), g = c.getContext('2d'), im = g.createImageData(256, 256), d = im.data;
+  for (let i = 0; i < 65536; i++) {
+    const n = hash(i & 255, i >> 8, 9), j = i * 4;
+    if (n < .14) d.set([10, 8, 20, 60], j); else if (n > .95) d.set([255, 255, 255, 18], j);
+  }
+  g.putImageData(im, 0, 0);
+  return c;
+})(), 'repeat');
+// Sky systems sit on one ring just outside the atmosphere, evenly spaced across the upper half (angle in degrees,
+// 0 = right, -90 = straight up). Ground systems stand on the ground line instead, at x planet radii from centre:
+// only working buildings on the ground, no filler.
+const ORBIT = 1.32, GX = 1.2;
 const SLOT = [
-  { a: -55 },                // laser: upper right, aimed down at the planet
-  { a: -90 },                // solar mirror: straight above
-  { a: -125 },               // drone rig: upper left
-  { x: 1.2, ground: true },  // comet launcher: pad in the city, right
-  { a: -165, island: true }, // bio seeder: floating island, left
-  { a: -15, island: true },  // terra core: floating island, right
+  { a: -30 },                 // laser: upper right, aimed down at the planet
+  { a: -90 },                 // solar mirror: straight above
+  { a: -150 },                // drone rig: upper left
+  { x: GX, ground: true },    // comet launcher: pad on the right
+  { x: -GX, ground: true },   // bio seeder: greenhouse on the left
+  { x: 0, ground: true },     // terra core: reactor in front of the planet
 ];
 for (const sl of SLOT) if (!sl.ground) { const r = sl.a * Math.PI / 180; sl.x = Math.cos(r) * ORBIT; sl.y = Math.sin(r) * ORBIT; }
-const ISLE = 17; // rock hanging under the island systems
 const HIT = 20; // touch radius in scene pixels (40+ CSS px), a bit larger than the sprites
-let K, PX, W, H, R0, R, CX, CY, GY, TOP, SIDE, FY = 1, city = [], hq, cityCv, grainCv, layoutH = 0;
+let K, PX, W, H, R0, R, CX, CY, GY, TOP, SIDE, FY = 1, layoutH = 0, city = [], cityCv, cityN = -1, ridge = [];
 const hudH = () => $('top').offsetHeight + $('side').offsetHeight; // the layout depends on these heights
 function resize() {
   if (!innerWidth || !innerHeight) return; // hidden iframe / minimised: nothing to lay out (0-size canvases would throw)
@@ -402,45 +474,38 @@ function resize() {
   layout();
   R = R0;
   // self-check: every system on screen, below the HUD, out of the stat boxes, and no two overlapping
-  const box = s => { const [x, y] = sysPos(s, 0), w = Math.max(LOOK[s].lit.width, SLOT[s].island ? 36 : 0), h = LOOK[s].lit.height; return [x - w / 2, y - h / 2, x + w / 2, y + h / 2 + (SLOT[s].island ? ISLE : 0)]; };
+  const box = s => { const [x, y] = sysPos(s, 0), w = LOOK[s].lit.width, h = LOOK[s].lit.height; return [x - w / 2, y - h / 2, x + w / 2, y + h / 2]; };
   const bs = SYS.map((_, s) => box(s));
   console.assert(bs.every(([l, t, r, b]) => l >= 0 && r <= W && t - 8 >= TOP && b <= GY + 1 && !(l < SIDE.r && t < SIDE.b)), 'system off screen or under the HUD', bs);
   console.assert(bs.every((a, i) => bs.every((b, j) => i === j || a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1])), 'systems overlap', bs);
 }
-// Planet sits low behind the colony skyline; the systems hang around it.
+// Planet sits low behind the ground line; the systems stand and hang around it.
 function layout() {
   const top = $('top').getBoundingClientRect().bottom / PX, bar = $('bar').offsetHeight / PX;
   $('side').style.top = $('toast').style.top = top * PX + 12 + 'px';
   const sr = $('side').getBoundingClientRect();
   TOP = top + 4; SIDE = { r: sr.right / PX, b: sr.bottom / PX };
-  GY = Math.round(H - bar - 14); // colony ground line
-  // planet as big as fits: the ring's side systems (cos 15° x ORBIT) plus a sprite half-width across,
+  GY = Math.round(H - bar - 14); // ground line
+  // planet as big as fits: the outer ground systems (GX, wider than the ring's cos 30° x ORBIT) plus a sprite half-width across,
   // the top system (ORBIT + sprite + label) above a centre that sits .45R over the ground
-  R0 = Math.max(10, Math.min(W * .42, (W / 2 - 19) / (ORBIT * .97), (GY - TOP - 28) / (ORBIT + .45)));
+  R0 = Math.max(10, Math.min(W * .42, (W / 2 - 19) / GX, (GY - TOP - 28) / (ORBIT + .45)));
   CX = Math.round(W / 2); CY = Math.round(GY - R0 * .45);
   FY = Math.max(1, Math.min(1.15, (CY - TOP - 30) / (ORBIT * R0))); // tall screens: a slight upward stretch, still hugging the planet
-  // skyline: a mix of building types, leaving open ground around the ground systems and the HQ
-  const clear = SYS.map((_, s) => SLOT[s].ground ? [CX + SLOT[s].x * R0 - LOOK[s].lit.width / 2 - 3, CX + SLOT[s].x * R0 + LOOK[s].lit.width / 2 + 3] : null).filter(Boolean);
-  hq = { x: CX - 24, w: 48, h: 26 };
-  clear.push([hq.x - 2, hq.x + hq.w + 2]);
+  // low background colony: a mix of building types, leaving open ground around the ground systems.
+  // It grows outward from the core as the planet heals (see drawColony), so `city` is sorted by distance from the centre.
+  const clear = SYS.map((_, s) => SLOT[s].ground && [CX + SLOT[s].x * R0 - LOOK[s].lit.width / 2 - 4, CX + SLOT[s].x * R0 + LOOK[s].lit.width / 2 + 4]).filter(Boolean);
   const kinds = ['office', 'tower', 'band', 'dome', 'office', 'needle', 'band', 'tower'];
   city = [];
-  for (let x = -2, n = 0; x < W; n++) {
-    const type = kinds[n % kinds.length], w = type === 'needle' ? 7 : type === 'tower' ? 9 + n % 3 : 12 + n * 5 % 9;
-    const h = { office: 12 + n * 7 % 10, tower: 20 + n * 3 % 9, band: 13 + n * 5 % 7, dome: 9, needle: 30 + n % 6 }[type];
-    if (!clear.some(([a, b]) => x < b && x + w > a)) city.push({ x, w, h, type });
-    x += w + 2 + n % 3;
+  for (let x = 1, n = 0; x < W - 6; n++) {
+    const type = kinds[n % kinds.length], w = type === 'needle' ? 7 : type === 'tower' ? 7 + n % 3 : 10 + n * 5 % 8;
+    const h = { office: 8 + n * 7 % 5, tower: 12 + n * 3 % 5, band: 8 + n * 5 % 4, dome: 6, needle: 16 + n % 4 }[type];
+    if (x + w < W && !clear.some(([a, b]) => x < b && x + w > a)) city.push({ x, w, h, type });
+    x += w + 3 + n % 4;
   }
-  // the skyline is static: draw it once, then give it the same grit as the planet (lit from above, darker toward the ground)
-  cityCv = mk(W, H);
-  drawCity(pen(cityCv.getContext('2d', { willReadFrequently: true })));
-  grit(cityCv, 3, (x, y) => Math.min(1, Math.max(0, 1 - (y - (GY - 40)) / 44)));
-  grainCv = mk(W + 8, H + 8); // film grain laid over the whole scene
-  const gg = grainCv.getContext('2d');
-  for (let y = 0; y < H + 8; y++) for (let x = 0; x < W + 8; x++) {
-    const n = hash(x, y, 9);
-    if (n < .1) { gg.fillStyle = 'rgba(10,8,20,.22)'; gg.fillRect(x, y, 1, 1); } else if (n > .96) { gg.fillStyle = 'rgba(255,255,255,.06)'; gg.fillRect(x, y, 1, 1); }
-  }
+  // distant mountains along the horizon: ridged noise gives sharp peaks; a second scale hides the 256px wrap
+  ridge = Array.from({ length: W }, (_, x) => Math.round(12 + 30 * (1 - Math.abs(2 * vnoise(x, 0, 32, 4) - 1)) + 10 * vnoise(x * .7 + 9, 3, 64, 5)));
+  city.sort((a, b) => Math.abs(a.x + a.w / 2 - CX) - Math.abs(b.x + b.w / 2 - CX));
+  cityN = -1; // redraw at the new size, without dust puffs
 }
 let resizeTimer;
 addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 120); }); // dragging a window: rebuild once it settles
@@ -454,8 +519,6 @@ function sysPos(s, t) {
   return [Math.round(x), Math.round(y)];
 }
 const muzzle = s => { const [x, y] = sysPos(s, last), [dx, dy] = MUZZLE[SYS[s].id] || [0, 0]; return [x + dx, y + dy]; };
-// Solid scenery in front of the planet: taps there do nothing.
-const onCity = (x, y) => y >= GY || [...city, hq].some(b => x >= b.x && x < b.x + b.w && y >= GY - b.h - (b.type === 'needle' || b === hq ? 12 : 0));
 
 // Dot-grid stars like a printed star chart.
 const stars = [];
@@ -501,7 +564,7 @@ function text(str, x, y, col = C.line) { // centred on x (kept on screen), botto
 
 // System s fires at a random spot on the visible planet. Real shots (purchases) leave a life patch.
 function fire(s, real) {
-  const a = Math.PI + Math.random() * Math.PI, d = R * .8 * Math.sqrt(Math.random()); // upper half: the lower half hides behind the colony
+  const a = Math.PI + Math.random() * Math.PI, d = R * .8 * Math.sqrt(Math.random()); // upper half: the lower half is behind the ground
   const tx = CX + Math.cos(a) * d, ty = CY + Math.sin(a) * d, [sx, sy] = muzzle(s), shot = SYS[s].shot;
   if (shot === 'light') { // sunlight from above lands on both mirror panels, then one reflected beam heats the planet
     for (const px of [-21, 20]) {
@@ -537,43 +600,65 @@ function globe(src, shift) {
     ctx.drawImage(src, u, 0, 1, TH, CX + x, CY - h / 2, 1, h);
   }
 }
-// Hard-edged night side: per row, shade the part of the planet outside the sunlit circle.
-function nightSide() {
-  ctx.fillStyle = 'rgba(20,18,40,.45)';
-  const lx = -R * .3, lr = R * 1.08;
+// Hard-edged light bands: per row, fill the part of the planet outside (or inside) the circle at (CX+lx, CY+ly) radius lr.
+function band(lx, ly, lr, col, inside) {
+  ctx.fillStyle = col;
   for (let dy = -R; dy < R; dy++) {
-    const hw = Math.sqrt(R * R - (dy + .5) ** 2), ly = dy + .5 + R * .25, l2 = lr * lr - ly * ly;
-    const span = (a, b) => { a = Math.round(CX + a); b = Math.round(CX + b); if (b > a) ctx.fillRect(a, CY + dy, b - a, 1); };
-    if (l2 <= 0) { span(-hw, hw); continue; }
+    const hw = Math.sqrt(R * R - (dy + .5) ** 2), l2 = lr * lr - (dy + .5 - ly) ** 2;
+    const span = (a, b) => { a = Math.round(CX + Math.max(-hw, a)); b = Math.round(CX + Math.min(hw, b)); if (b > a) ctx.fillRect(a, CY + dy, b - a, 1); };
+    if (l2 <= 0) { if (!inside) span(-hw, hw); continue; }
     const lw = Math.sqrt(l2);
-    span(Math.max(-hw, lx + lw), hw);
-    span(-hw, Math.min(hw, lx - lw));
+    if (inside) span(lx - lw, lx + lw); else { span(lx + lw, hw); span(-hw, lx - lw); }
   }
 }
-function drawMoon(x, y) {
-  const r = Math.max(2, Math.round(R * .12));
+// Cartoon sphere lighting, sun at the top-left: highlight, two shadow steps, and a thin back-light on the dark limb.
+function shadeGlobe(glow) {
+  band(-R * .42, -R * .42, R * .5, 'rgba(255,255,255,.1)', true);
+  band(-R * .3, -R * .25, R * .95, 'rgba(20,18,40,.22)');
+  band(-R * .3, -R * .25, R * 1.08, 'rgba(20,18,40,.4)');
+  ctx.fillStyle = `rgb(${glow})`;
+  for (let i = 0, n = Math.ceil(R * 7); i < n; i++) {
+    const a = i / n * 2 * Math.PI, x = Math.round(CX + Math.cos(a) * (R - 1)), y = Math.round(CY + Math.sin(a) * (R - 1));
+    if (Math.hypot(x - CX + R * .3, y - CY + R * .25) > R * 1.2) ctx.fillRect(x, y, 1, 1);
+  }
+}
+function drawMoon(x, y, k) { // k: 0..1 while it grows in
+  const r = Math.max(1, Math.round(R * .12 * k));
   for (let dy = -r; dy <= r; dy++) { const dx = Math.round(Math.sqrt(r * r - dy * dy)); P.fill(x - dx, y + dy, dx * 2 + 1, 1, C.soft); P.fill(x + Math.round(r * .3), y + dy, Math.max(0, dx - Math.round(r * .3)) + 1, 1, C.dim); }
 }
 
-// Colony skyline with the HQ under the planet, drawn with pen p (once per layout, into cityCv).
-function drawCity(p) {
-  for (const b of city) {
-    const { x, w, h, type } = b, y = GY - h;
-    if (type === 'needle') { p.box(x + 2, y + 9, 3, h - 9, C.bg, false); p.box(x, y + 4, 7, 6); p.fill(x + 3, y, 1, 4, C.line); p.dot(x + 3, y - 1, C.pink); continue; }
+// Colony buildings (the first n of `city`), drawn with pen p into cityCv, then dimmed with the sprites' grit so they stay
+// in the background. Antenna tips are listed in `lights` and blink in drawColony.
+const lights = [];
+function drawCity(p, n) {
+  lights.length = 0;
+  for (const { x, w, h, type } of city.slice(0, n)) {
+    const y = GY - h;
+    if (type === 'needle') { p.box(x + 2, y + 9, 3, h - 9, C.bg, false); p.box(x, y + 4, 7, 6); p.fill(x + 3, y + 1, 1, 3, C.line); lights.push([x + 3, y]); continue; }
+    if (type === 'dome') { p.disc(x + (w >> 1), GY - 1, (w >> 1) - 1, C.bg, true); p.box(x + (w >> 1) - 1, GY - 3, 3, 3, C.bg, false); continue; }
     p.box(x, y, w, h, C.bg, false);
-    if (type === 'office') for (let wy = y + 3; wy < GY - 3; wy += 5) for (let wx = x + 3; wx + 3 <= x + w - 2; wx += 4) p.box(wx, wy, 3, 3);
-    if (type === 'tower') { for (let wx = x + 2; wx < x + w - 2; wx += 2) p.line(wx, y + 3, wx, GY - 3, C.dim); p.fill(x + (w >> 1), y - 6, 1, 6, C.line); p.fill(x + (w >> 1) - 1, y - 7, 3, 1, C.pink); }
-    if (type === 'band') { for (let wy = y + 3; wy < GY - 2; wy += 3) p.line(x + 2, wy, x + w - 3, wy, C.dim); p.box(x + 2, y - 3, 5, 4); }
-    if (type === 'dome') { p.disc(x + (w >> 1), y, (w >> 1) - 1, C.bg, true); p.box(x + (w >> 1) - 2, GY - 5, 4, 5, C.bg, false); }
+    if (type === 'office') for (let wy = y + 2; wy < GY - 3; wy += 4) for (let wx = x + 2; wx + 2 <= x + w - 2; wx += 3) p.fill(wx, wy, 2, 2, C.line);
+    if (type === 'tower') { for (let wx = x + 2; wx < x + w - 2; wx += 2) p.line(wx, y + 2, wx, GY - 2, C.dim); p.fill(x + (w >> 1), y - 4, 1, 4, C.line); lights.push([x + (w >> 1), y - 5]); }
+    if (type === 'band') for (let wy = y + 2; wy < GY - 1; wy += 3) p.line(x + 2, wy, x + w - 3, wy, C.dim);
   }
-  const { x, w, h } = hq, y = GY - h; // HQ: columns, pink sign, big ribbed dome, dish
-  p.disc(x + w / 2, y, 13, C.bg, true);
-  for (const dx of [-7, 0, 7]) p.line(x + w / 2 + dx, y - Math.round(Math.sqrt(169 - dx * dx)) + 1, x + w / 2 + dx, y - 1, C.dim);
-  p.box(x, y, w, h, C.bg, false);
-  p.fill(x + 6, y + 3, w - 12, 3, C.pink);
-  for (let cx = x + 4; cx < x + w - 3; cx += 5) p.line(cx, y + 9, cx, GY - 1);
-  p.line(x + w - 4, y, x + w - 4, y - 6); p.ring(x + w - 4, y - 8, 3, 2, 0, Math.PI);
 }
+// The colony grows with the planet: 40% of the buildings at 0%, all of them at 100%. A rover patrols the ground.
+const ROVER = tiny(['.www...', 'wnnwww.', 'wwwwwww', '.w.w.w.']);
+function drawColony(t, heal) {
+  const n = Math.ceil(city.length * (.4 + .6 * heal));
+  if (n !== cityN) {
+    if (cityN >= 0) for (const b of city.slice(cityN, n)) burst(b.x + b.w / 2, GY - 2, [C.soft, C.dim], 10, 22); // dust as a new building goes up
+    cityN = n; cityCv = mk(W, H);
+    drawCity(pen(cityCv.getContext('2d', { willReadFrequently: true })), n);
+    grit(cityCv, 3, (x, y) => .4 - Math.max(0, Math.min(.3, (y - (GY - 20)) / 60))); // dim: outlines stay grey, darker toward the ground
+  }
+  ctx.drawImage(cityCv, 0, 0);
+  for (const [x, y] of lights) if (Math.sin(t * 2 + x * .7) > 0) P.dot(x, y, C.pink);
+  const rx = (t * 9) % (W + 20) - 10;
+  blit(ROVER, rx, GY - 2);
+  if (Math.random() < .15) parts.push({ x: rx - 4, y: GY - 1, vx: -4, vy: -3, life: .5, color: C.dim });
+}
+
 // Atmosphere ring in clean solid bands (white rim, then three fading steps). Built at the full planet size (R0) and
 // rebuilt only when that size or the colour changes; the warp zoom just scales it.
 let haloCv, haloKey;
@@ -595,17 +680,8 @@ const canAct = s => S.on[s] ? S.L[s].some((l, k) => l < MAXL && S.life >= ucost(
 
 // A system: shaded line-art when unlocked, dim outline when next, dotted silhouette otherwise.
 function drawSystem(s, t) {
-  const look = LOOK[s], on = S.on[s], img = on ? look.lit : unlocked(s) ? look.next : look.sil;
-  const [x, y] = sysPos(s, t), w = img.width, h = img.height, x0 = Math.round(x - w / 2), y0 = Math.round(y - h / 2);
-  if (SLOT[s].island) { // floating rock under the core, dithered dark toward the bottom
-    for (let k = 0; k < ISLE - 1; k++) {
-      const half = Math.round((ISLE - 1 - k) * 1.05 + (k % 3));
-      for (let dx = -half; dx < half; dx++) P.dot(x + dx, y0 + h + k, !on ? C.sil : B4[k & 3][(dx + 64) & 3] / 16 < .8 - k / ISLE ? '#3d4462' : '#22263a');
-      P.dot(x - half, y0 + h + k, on ? C.soft : C.dim); P.dot(x + half - 1, y0 + h + k, on ? C.soft : C.dim);
-    }
-    P.fill(x - 17, y0 + h, 34, 1, on ? C.line : C.dim);
-  }
-  ctx.drawImage(img, x0, y0);
+  const look = LOOK[s], img = S.on[s] ? look.lit : unlocked(s) ? look.next : look.sil;
+  blit(img, ...sysPos(s, t));
 }
 // Labels, price tags, pink dots and selection brackets go on top of every system, so nothing hides them.
 function drawMarks(s, t) {
@@ -632,22 +708,25 @@ function draw(t, heal) {
   const halo = haloRing(c), hs = Math.round(halo.width * R / Math.round(R0)); // hs = halo size at the current (zoomed) radius
   ctx.drawImage(halo, Math.round(CX - hs / 2), Math.round(CY - hs / 2), hs, hs);
 
+  ridge.forEach((h, x) => { P.fill(x, GY - h, 1, h, C.deep); P.dot(x, GY - h, C.dim); }); // dark mountains, behind the planet
   const ma = t * .2, moon = [Math.round(CX + Math.cos(ma) * R * 1.2), Math.round(CY + Math.sin(ma) * R * .36 - Math.cos(ma) * R * .1)], front = Math.sin(ma) > 0;
-  if (stage >= 3) P.ring(CX, CY, R * 1.38, R * .2, Math.PI, 2 * Math.PI);
-  if (stage >= 1 && !front) drawMoon(...moon);
+  // milestones ease in over a few % of healing instead of popping: moon at 25%, clouds at 50%, rings at 75%
+  const ramp = at => Math.max(0, Math.min(1, (heal - at) / .03)), mo = ramp(.25), ck = ramp(.5), rk = ramp(.75), rr = R * (1.1 + .28 * rk);
+  if (rk) P.ring(CX, CY, rr, rr * .145, Math.PI, 2 * Math.PI);
+  if (mo && !front) drawMoon(...moon, mo);
   compose(t, heal);
   globe(comp, off);
-  if (stage >= 2) globe(clouds, off * 1.7);
-  nightSide();
+  if (ck) { ctx.globalAlpha = ck; globe(clouds, off * 1.7); ctx.globalAlpha = 1; }
+  shadeGlobe(c);
   const crew = Math.min(bots.length, S.L.reduce((a, L, s) => a + (S.on[s] ? 1 + L[0] : 0), 0)); // one walker per crew member, capped
   for (let k = 0; k < crew; k++) { const f = facePos(bots[k][0], bots[k][1]); if (f) blit(T.bot, f[0], f[1] + (Math.sin(t * 4 + k) > .6 ? -1 : 0)); }
-  if (stage >= 3) P.ring(CX, CY, R * 1.38, R * .2, 0, Math.PI);
-  if (stage >= 1 && front) drawMoon(...moon);
+  if (rk) P.ring(CX, CY, rr, rr * .145, 0, Math.PI);
+  if (mo && front) drawMoon(...moon, mo);
   for (const p of pulses) { ctx.globalAlpha = p.life; P.ring(CX, CY, p.r, p.r, 0, 2 * Math.PI, C.pink); }
   ctx.globalAlpha = 1;
 
   P.fill(0, GY, W, H - GY, C.deep); P.fill(0, GY, W, 1, C.line); // ground
-  ctx.drawImage(cityCv, 0, 0);
+  drawColony(t, heal);
   SYS.forEach((_, s) => drawSystem(s, t));
   SYS.forEach((_, s) => drawMarks(s, t));
 
@@ -672,13 +751,13 @@ function draw(t, heal) {
   if (!S.taps) blit(T.hand, CX + R * .2, CY - R * .3 + bob);
   else if (!S.on[0] && sel !== 0 && S.life >= SYS[0].unlock) { const [x, y] = sysPos(0, t); blit(T.hand, x, y + 18 + bob); }
 
-  ctx.drawImage(grainCv, -((t * 7 | 0) % 8), -((t * 5 | 0) % 8)); // grain, nudged a few times a second
-
   // screen: the scene scaled up with nearest-neighbour
   out.imageSmoothingEnabled = false;
   out.fillStyle = C.bg; out.fillRect(0, 0, cv.width, cv.height);
   const [ox, oy] = camOrigin(), sx = shake ? Math.round((Math.random() - .5) * shake * 6) : 0, sy = shake ? Math.round((Math.random() - .5) * shake * 6) : 0;
   out.drawImage(buf, (ox + sx) * K, (oy + sy) * K, W * cam.z * K, H * cam.z * K);
+  const gx = (t * 7 | 0) % 8 * 31, gy = (t * 5 | 0) % 8 * 17; // fine grain: one screen pixel per speck, shifted a few times a second
+  out.save(); out.translate(-gx, -gy); out.fillStyle = grainPat; out.fillRect(gx, gy, cv.width, cv.height); out.restore();
   if (flash) { out.fillStyle = `rgba(233,236,245,${flash})`; out.fillRect(0, 0, cv.width, cv.height); } // warp flash
 }
 
@@ -796,9 +875,10 @@ function toast(msg, big) {
 
 $('goal').addEventListener('click', () => {
   const g = GOALS[S.goal];
-  if (!g || !g.reward || g.get() < g.need) return;
-  S.life += g.reward; S.earned += g.reward; S.goal++;
-  updateUI();
+  if (!g) return;
+  if (g.reward && g.get() >= g.need) { S.life += g.reward; S.earned += g.reward; S.goal++; return updateUI(); }
+  const s = typeof g.go === 'function' ? g.go() : g.go; // not done yet: glide the camera to the system it is about
+  if (s >= 0) openPanel(s); else closePanel();
 });
 
 function showWarp() {
@@ -887,7 +967,7 @@ cv.addEventListener('pointerdown', e => {
   let hit = -1, best = HIT / cam.z;
   SYS.forEach((_, s) => { const [sx, sy] = sysPos(s, last), d = Math.hypot(x - sx, y - sy); if (d <= best) { best = d; hit = s; } }); // nearest wins
   if (hit >= 0) return openPanel(hit);
-  if (onCity(x, y)) return; // buildings and ground are solid
+  if (y >= GY) return; // the ground is solid
   if ((x - CX) ** 2 + (y - CY) ** 2 > R * R) return closePanel();
   tapPlanet(x, y);
 });
@@ -924,7 +1004,7 @@ function frame(ms) {
   R = Math.round(R0 * zoom);
 
   // camera: zoom 2x onto the selected system, centred in the open space right of the stats and above the panel
-  const k = Math.min(1, dt * 6), open = sel >= 0, [fx, fy] = open ? sysPos(sel, 0) : [W / 2, H / 2];
+  const k = Math.min(1, dt * 4), open = sel >= 0, [fx, fy] = open ? sysPos(sel, 0) : [W / 2, H / 2];
   const tgt = { z: open ? 2 : 1, fx, fy, ax: open ? (SIDE.r + W) / 2 : W / 2, ay: open ? (TOP + (H - panelH / PX)) / 2 : H / 2 };
   for (const key in tgt) { cam[key] += (tgt[key] - cam[key]) * k; if (Math.abs(tgt[key] - cam[key]) < .02) cam[key] = tgt[key]; } // snap to exact values: whole-pixel scale when settled
 
