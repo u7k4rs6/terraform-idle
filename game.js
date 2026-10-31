@@ -45,9 +45,18 @@ const fmt = n => {
 };
 console.assert(fmt(999999) === '1.00m' && fmt(9999) === '10.0k' && fmt(1500) === '1.50k' && fmt(12.7) === '12', 'fmt rounding');
 
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]) };
-const boost = () => 2 ** S.world; // every world you finish doubles all output for good
-const rateOf = () => SYS.reduce((a, _, s) => a + (S.on[s] ? sysRate(s, S.L[s]) : 0), 0) * boost();
+// seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids
+const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [] };
+const has = id => S.tal.includes(id);
+const boost = () => (has('echo') ? 2.5 : 2) ** S.world; // every world you finish multiplies all output for good
+// Talent multipliers: on everything, and on pairs of systems.
+const allMul = () => (has('roots') ? 1.25 : 1) * (has('bloom') ? 1.5 : 1) * (has('gaia') ? 2 : 1) * (has('kinetic') ? 1 + Math.min(1, S.taps / 1e4) : 1);
+const PAIR = { lens: [0, 1], swarm: [2, 3], grow: [4, 5] };
+const sysOut = s => sysRate(s, S.L[s]) * boost() * allMul() * Object.entries(PAIR).reduce((m, [id, ss]) => (has(id) && ss.includes(s) ? m * 2 : m), 1);
+const rateOf = () => SYS.reduce((a, _, s) => a + (S.on[s] ? sysOut(s) : 0), 0);
+const price = (s, k) => Math.ceil(ucost(s, k, S.L[s][k]) * (has('thrift') ? .9 : 1)); // next level of upgrade k
+const unlockCost = s => Math.ceil(SYS[s].unlock * (has('cheap') ? .75 : 1));
+const rewardOf = g => g.reward * (has('patron') ? 3 : 1);
 const unlocked = s => s === 0 || S.on[s - 1];
 const items = []; // life patches on the planet: { u, v (texture coords), born }
 const pct = () => Math.floor(healOf(S.earned) * 100);
@@ -588,7 +597,7 @@ function land(s, x, y, real) {
   if (big) shake = Math.max(shake, real ? .7 : .2);
   if (real) { const [u, v] = texPos(x, y); items.push({ u, v, born: last }); if (items.length > 300) items.splice(0, items.length - 150); }
   // damage pop-up: what this system earns per shot, so the numbers match the real income
-  floats.push({ x, y: y - 8, text: '+' + fmt(sysRate(s, S.L[s]) * boost() * cadence(s)), life: 1.4, col: '#ffd6e0' }); // light pink: readable on any planet
+  floats.push({ x, y: y - 8, text: '+' + fmt(sysOut(s) * cadence(s)), life: 1.4, col: '#ffd6e0' }); // light pink: readable on any planet
   if (floats.length > 14) floats.shift(); // keep the sky readable
 }
 
@@ -676,7 +685,7 @@ function haloRing(rgb) {
   return haloCv = c;
 }
 
-const canAct = s => S.on[s] ? S.L[s].some((l, k) => l < MAXL && S.life >= ucost(s, k, l)) : unlocked(s) && S.life >= SYS[s].unlock;
+const canAct = s => S.on[s] ? S.L[s].some((l, k) => l < MAXL && S.life >= price(s, k)) : unlocked(s) && S.life >= unlockCost(s);
 
 // A system: shaded line-art when unlocked, dim outline when next, dotted silhouette otherwise.
 function drawSystem(s, t) {
@@ -689,7 +698,7 @@ function drawMarks(s, t) {
   const [x, y] = sysPos(s, t), w = img.width, h = img.height, x0 = Math.round(x - w / 2), y0 = Math.round(y - h / 2);
   if (on) text(`${S.L[s][0] + S.L[s][1] + S.L[s][2]}/${MAXL * 3}`, x, y0 - 8);
   else if (unlocked(s)) { // price tag: energy icon + amount, kept on screen as one unit
-    const label = fmt(SYS[s].unlock), lw = textW(label), total = 9 + lw, left = Math.max(1, Math.min(W - total - 2, Math.round(x - total / 2)));
+    const label = fmt(unlockCost(s)), lw = textW(label), total = 9 + lw, left = Math.max(1, Math.min(W - total - 2, Math.round(x - total / 2)));
     ctx.drawImage(T.energy, left, y0 - 10);
     text(label, left + 9 + lw / 2, y0 - 8, C.soft);
   }
@@ -749,7 +758,7 @@ function draw(t, heal) {
   // first-run hints: tap the planet, then the Laser Station once it's affordable
   const bob = Math.round(Math.sin(t * 6) * 2);
   if (!S.taps) blit(T.hand, CX + R * .2, CY - R * .3 + bob);
-  else if (!S.on[0] && sel !== 0 && S.life >= SYS[0].unlock) { const [x, y] = sysPos(0, t); blit(T.hand, x, y + 18 + bob); }
+  else if (!S.on[0] && sel !== 0 && S.life >= unlockCost(0)) { const [x, y] = sysPos(0, t); blit(T.hand, x, y + 18 + bob); }
 
   // screen: the scene scaled up with nearest-neighbour
   out.imageSmoothingEnabled = false;
@@ -782,7 +791,7 @@ const rows = [0, 1, 2].map(k => {
 
 function updateUI() {
   set($('life'), ICON + fmt(S.life));
-  $('rate').textContent = `${fmt(rateOf())} life/s` + (S.world ? ` x${boost()}` : '');
+  $('rate').textContent = `${fmt(rateOf())} life/s` + (S.world ? ` x${fmt(boost())}` : '');
   $('wname').textContent = world().name + (S.world >= WORLDS.length ? ' ' + 'I'.repeat(Math.floor(S.world / WORLDS.length) + 1) : '');
   const h = pct();
   $('healbar').style.width = h + '%';
@@ -795,7 +804,7 @@ function updateUI() {
     const n = Math.min(g.get(), g.need);
     goal.classList.toggle('ready', n >= g.need && g.reward > 0);
     set($('gtext'), `${g.text} ${n}/${g.need}`);
-    set($('grew'), g.reward ? `${ICON}${fmt(g.reward)}` : '');
+    set($('grew'), g.reward ? `${ICON}${fmt(rewardOf(g))}` : '');
   }
   tiles.forEach((b, s) => {
     set(b, `<img src="${S.on[s] ? tileSrc[s].lit : unlocked(s) ? tileSrc[s].next : tileSrc[s].sil}" alt="">`);
@@ -803,6 +812,7 @@ function updateUI() {
     b.classList.toggle('sel', sel === s);
     b.setAttribute('aria-expanded', sel === s);
   });
+  talTile.classList.toggle('ok', S.seeds > 0 && TAL.some(canTal));
   if (W && hudH() !== layoutH) resize(); // goal text wrapped or the HUD changed size: re-fit the scene below it
 
   panelH = panel.offsetHeight; // read here (10x/s), not in every frame
@@ -810,16 +820,16 @@ function updateUI() {
   if (sel < 0) return;
   const s = sel, sy = SYS[s], L = S.L[s];
   $('pname').textContent = sy.name;
-  set($('pinfo'), S.on[s] ? `${ICON}${fmt(sysRate(s, L) * boost())}/s` : unlocked(s) ? `${ICON}${fmt(sy.unlock)}` : 'locked');
+  set($('pinfo'), S.on[s] ? `${ICON}${fmt(sysOut(s))}/s` : unlocked(s) ? `${ICON}${fmt(unlockCost(s))}` : 'locked');
   $('pfact').textContent = S.on[s] ? sy.fact : '';
   rows.forEach(({ r, text: el, buy }, k) => {
     if (!S.on[s]) { // locked: one unlock row
       r.hidden = k > 0;
-      buy.setAttribute('aria-disabled', !unlocked(s) || S.life < sy.unlock); // aria-disabled, not disabled: keeps keyboard focus
+      buy.setAttribute('aria-disabled', !unlocked(s) || S.life < unlockCost(s)); // aria-disabled, not disabled: keeps keyboard focus
       set(el, `Unlock ${sy.name}<small>${unlocked(s) ? sy.desc : `Unlock the ${SYS[s - 1].name} first.`}</small>`);
-      return set(buy, `Unlock<span>${ICON}${fmt(sy.unlock)}</span>`);
+      return set(buy, `Unlock<span>${ICON}${fmt(unlockCost(s))}</span>`);
     }
-    const max = L[k] >= MAXL, c = ucost(s, k, L[k]), [name, eff] = sy.ups[k];
+    const max = L[k] >= MAXL, c = price(s, k), [name, eff] = sy.ups[k];
     const desc = [`Adds +1 ${sy.unit} to the crew.`, `${eff} per level.`, `${eff} per level, stacking.`][k];
     const cur = [[`${1 + L[0]} ${sy.unit}s`, '+1'], [`+${25 * L[1]}%`, '+25%'], [`x${(1.08 ** L[2]).toFixed(2)}`, 'x1.08']][k];
     r.hidden = false;
@@ -832,12 +842,12 @@ function updateUI() {
 function rowClick(k) {
   const s = sel, sy = SYS[s], [x, y] = sysPos(s, last);
   if (!S.on[s]) {
-    if (!unlocked(s) || S.life < sy.unlock) return;
-    S.life -= sy.unlock; S.on[s] = true; pulse = 1;
+    if (!unlocked(s) || S.life < unlockCost(s)) return;
+    S.life -= unlockCost(s); S.on[s] = true; pulse = 1;
     toast(sy.fact);
     burst(x, y, [C.line, C.pink, C.soft], 40, 60);
   } else {
-    const L = S.L[s], c = ucost(s, k, L[k]);
+    const L = S.L[s], c = price(s, k);
     if (L[k] >= MAXL || S.life < c) return;
     S.life -= c; L[k]++;
     burst(x, y, [C.pink, C.line], 14, 40);
@@ -862,7 +872,129 @@ function closePanel() {
 $('pclose').addEventListener('click', closePanel);
 $('prev').addEventListener('click', () => openPanel((sel + SYS.length - 1) % SYS.length));
 $('next').addEventListener('click', () => openPanel((sel + 1) % SYS.length));
-addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('talents').hidden) closeTalents(); else closePanel(); } });
+
+// ---------- talents: every healed planet gives a Star Seed; each talent costs one and needs the node above it ----------
+const TI = { // 9x9 talent icons (w = line, n = fill, p = pink)
+  sprout: tiny(['..ww.ww..', '.wwwwwww.', '..wwwww..', '....w....', '....w....', '.wwwwwww.', '.wnnnnnw.', '..wnnnw..', '..wwwww..']),
+  star: tiny(['....w....', '....w....', '...www...', 'wwwwwwwww', '.wwwwwww.', '..wwwww..', '..ww.ww..', '.ww...ww.', '.w.....w.']),
+  moon: tiny(['...wwww..', '..www....', '.www.....', '.ww......', '.ww......', '.www.....', '..www..w.', '...wwwww.', '.........']),
+  tag: tiny(['....wwwww', '...wnnnnw', '..wnnnwnw', '.wnnnnnnw', 'wnnnnnnw.', 'wnnnnnw..', '.wnnnw...', '..wnw....', '...w.....']),
+  gift: tiny(['.ww...ww.', '..ww.ww..', 'wwwwwwwww', 'wnnnwnnnw', 'wwwwwwwww', '.wnnwnnw.', '.wnnwnnw.', '.wnnwnnw.', '.wwwwwww.']),
+  rings: tiny(['..wwwww..', '.w.....w.', 'w..www..w', 'w.w...w.w', 'w.w.w.w.w', 'w.w...w.w', 'w..www..w', '.w.....w.', '..wwwww..']),
+  bot: tiny(['....w....', '..wwwww..', '.wnnnnnw.', '.wwnnnww.', '.wnnnnnw.', '..wwwww..', '.wwnnnww.', 'w.wnnnw.w', '..ww.ww..']),
+  bolt: tiny(['.....ww..', '....ww...', '...ww....', '..wwwww..', '....ww...', '...ww....', '..ww.....', '.ww......', '.........']),
+};
+const src = c => c.toDataURL(), HAND = src(T.hand), ENERGY = src(T.energy), SEED = `<img class="ico" src="${src(TI.sprout)}" alt="Star Seeds">`;
+// Grid is 300 x 420. Each tier r: a diamond in the middle (top, left, right, bottom) and a two-node branch on each side.
+// via: the y where the connector from the parent turns sideways.
+const tier = r => { const b = 140 * r; return { T: b + 25, M: b + 62, B: b + 100, via: b - 8 }; };
+const t0 = tier(0), t1 = tier(1), t2 = tier(2);
+const TAL = [
+  ['spark', 'Spark', 'Taps give x3 life.', HAND, 150, t0.T],
+  ['seedbank', 'Seed Bank', 'Start every new world with 1,000 life (times your warp boost).', src(TI.sprout), 100, t0.M, 'spark', t0.M],
+  ['lens', 'Hot Lens', 'Laser Station and Solar Mirror output x2.', tileSrc[0].lit, 200, t0.M, 'spark', t0.M],
+  ['roots', 'Deep Roots', 'All output +25%.', ENERGY, 150, t0.B, 'spark'],
+  ['crit', 'Lucky Strike', '10% of taps are critical: x10 life.', src(TI.star), 42, t1.T, 'roots', t1.via],
+  ['crit2', 'Jackpot', 'Critical taps happen 20% of the time.', src(TI.star), 42, t1.B, 'crit'],
+  ['swarm', 'Swarm Logic', 'Drone Hive and Comet Launcher output x2.', tileSrc[2].lit, 150, t1.T, 'roots', t1.via],
+  ['thrift', 'Bulk Orders', 'Upgrades cost 10% less.', src(TI.tag), 100, t1.M, 'swarm', t1.M],
+  ['patron', 'Patron', 'Goal rewards x3.', src(TI.gift), 200, t1.M, 'swarm', t1.M],
+  ['bloom', 'Bloom', 'All output +50%.', ENERGY, 150, t1.B, 'swarm'],
+  ['autotap', 'Tap Bot', 'Taps the planet for you once a second.', src(TI.bot), 258, t1.T, 'roots', t1.via],
+  ['autotap2', 'Tap Swarm', 'Automatic taps 4 times a second.', src(TI.bot), 258, t1.B, 'autotap'],
+  ['sleep', 'Night Shift', 'Offline earnings count up to 24h instead of 12h.', src(TI.moon), 42, t2.T, 'bloom', t2.via],
+  ['dream', 'Lucid Dreams', 'Offline earnings x2.', src(TI.moon), 42, t2.B, 'sleep'],
+  ['grow', 'Greenhouse', 'Bio Seeder and Terra Core output x2.', tileSrc[4].lit, 150, t2.T, 'bloom', t2.via],
+  ['cheap', 'Fast Track', 'Unlocking systems costs 25% less.', src(TI.tag), 100, t2.M, 'grow', t2.M],
+  ['echo', 'Warp Echo', 'Each healed world multiplies output x2.5 instead of x2.', src(TI.rings), 200, t2.M, 'grow', t2.M],
+  ['gaia', 'Gaia', 'All output x2.', src(TI.sprout), 150, t2.B, 'grow'],
+  ['kinetic', 'Kinetic Grid', '+1% output per 100 lifetime taps, up to +100%.', src(TI.bolt), 258, t2.T, 'bloom', t2.via],
+  ['tapecho', 'Tap Echo', 'Every tap also adds a full second of income.', HAND, 258, t2.B, 'kinetic'],
+].map(([id, name, desc, icon, x, y, req, via]) => ({ id, name, desc, icon, x, y, req, via }));
+const talById = Object.fromEntries(TAL.map(t => [t.id, t]));
+const canTal = t => !has(t.id) && (!t.req || has(t.req));
+
+// Round pixel emblem behind each cluster (dark, so the nodes and links stay the focus).
+const EMBLEM = (() => {
+  const c = mk(40, 40), g = c.getContext('2d'), p = pen(g), ink = '#2c3250';
+  for (let dy = -19; dy <= 19; dy++) { const dx = Math.round(Math.sqrt(361 - dy * dy)); p.fill(20 - dx, 20 + dy, dx * 2 + 1, 1, '#242940'); }
+  p.ring(20, 20, 18, 18, 0, 2 * Math.PI, ink); p.ring(20, 20, 12, 12, 0, 2 * Math.PI, ink);
+  p.line(20, 2, 20, 38, ink); p.line(2, 20, 38, 20, ink);
+  for (const [a, b, c2, d] of [[20, 8, 32, 20], [32, 20, 20, 32], [20, 32, 8, 20], [8, 20, 20, 8]]) p.line(a, b, c2, d, ink);
+  for (const [x, y] of [[9, 9], [31, 9], [9, 31], [31, 31]]) { p.line(x - 1, y, x + 1, y, ink); p.line(x, y - 1, x, y + 1, ink); }
+  return c.toDataURL();
+})();
+
+const tree = $('tree'), SVGNS = 'http://www.w3.org/2000/svg', pctX = x => x / 3 + '%', pctY = y => y / 4.2 + '%';
+for (const [x, y, size] of [[150, t0.M, 130], ...[t1, t2].flatMap(t => [[150, t.M, 130], [42, t.M, 110], [258, t.M, 110]])]) {
+  const im = Object.assign(document.createElement('img'), { src: EMBLEM, alt: '', className: 'temb' });
+  Object.assign(im.style, { left: pctX(x), top: pctY(y), width: size / 3 + '%' });
+  tree.append(im);
+}
+const lines = document.createElementNS(SVGNS, 'svg');
+lines.setAttribute('viewBox', '0 0 300 420'); lines.setAttribute('preserveAspectRatio', 'none'); lines.setAttribute('shape-rendering', 'crispEdges');
+tree.append(lines);
+let selTal = 'spark', talOpener = null;
+for (const t of TAL) {
+  if (t.req) { // square connector: down from the parent, across at `via`, down into the child
+    const pr = talById[t.req], via = t.via ?? t.y;
+    t.line = document.createElementNS(SVGNS, 'polyline');
+    t.line.setAttribute('points', `${pr.x},${pr.y} ${pr.x},${via} ${t.x},${via} ${t.x},${t.y}`);
+    t.line.setAttribute('fill', 'none'); t.line.setAttribute('stroke-width', '3');
+    lines.append(t.line);
+  }
+  t.el = document.createElement('button');
+  t.el.className = 'tn';
+  t.el.innerHTML = `<img src="${t.icon}" alt="">`;
+  Object.assign(t.el.style, { left: pctX(t.x), top: pctY(t.y) });
+  t.el.addEventListener('click', () => { selTal = t.id; renderTal(); });
+  tree.append(t.el);
+}
+// links light up pink once both ends are unlocked; drawn in tree order so lit links sit on top of dim ones
+function renderTal() {
+  set($('tseeds'), `${SEED} ${S.seeds}`);
+  for (const t of TAL) {
+    const on = has(t.id);
+    t.el.className = 'tn ' + (on ? 'on' : canTal(t) ? 'av' : 'lock') + (selTal === t.id ? ' sel' : '');
+    t.el.setAttribute('aria-label', `${t.name}: ${t.desc} ${on ? 'Unlocked.' : canTal(t) ? 'Available.' : 'Locked.'}`);
+    t.el.setAttribute('aria-pressed', selTal === t.id);
+    if (t.line) { t.line.setAttribute('stroke', on ? C.pink : C.dim); if (on) lines.append(t.line); }
+  }
+  const t = talById[selTal], buy = $('tbuy');
+  $('tname').textContent = t.name;
+  $('tdesc').textContent = t.desc;
+  buy.setAttribute('aria-disabled', !canTal(t) || S.seeds < 1);
+  set(buy, has(t.id) ? 'Unlocked' : !canTal(t) ? `Needs<span>${talById[t.req].name}</span>` : `Unlock<span>${SEED}1</span>`);
+}
+$('tbuy').addEventListener('click', () => {
+  const t = talById[selTal];
+  if (!canTal(t) || S.seeds < 1) return;
+  S.seeds--; S.tal.push(t.id);
+  renderTal(); updateUI(); save();
+});
+$('treset').addEventListener('click', () => { S.seeds += S.tal.length; S.tal = []; renderTal(); updateUI(); save(); }); // free respec
+function openTalents() {
+  closePanel();
+  talOpener = document.activeElement;
+  $('talents').hidden = false;
+  for (const id of BEHIND_WARP) $(id).inert = true;
+  renderTal();
+  talById[selTal].el.focus({ preventScroll: true });
+}
+function closeTalents() {
+  if ($('talents').hidden) return;
+  $('talents').hidden = true;
+  for (const id of BEHIND_WARP) $(id).inert = false;
+  if (talOpener?.isConnected && talOpener !== document.body) talOpener.focus({ preventScroll: true });
+}
+$('tclose').addEventListener('click', closeTalents);
+const talTile = document.createElement('button'); // last tile in the bottom bar
+talTile.className = 'tile'; talTile.setAttribute('aria-label', 'Talents'); talTile.setAttribute('aria-controls', 'talents');
+talTile.innerHTML = `<img src="${src(TI.sprout)}" alt="">`;
+talTile.addEventListener('click', openTalents);
+$('bar').append(talTile);
+
 
 let toastTimer, pendingToast = null;
 function toast(msg, big) {
@@ -876,7 +1008,7 @@ function toast(msg, big) {
 $('goal').addEventListener('click', () => {
   const g = GOALS[S.goal];
   if (!g) return;
-  if (g.reward && g.get() >= g.need) { S.life += g.reward; S.earned += g.reward; S.goal++; return updateUI(); }
+  if (g.reward && g.get() >= g.need) { const r = rewardOf(g); S.life += r; S.earned += r; S.goal++; return updateUI(); }
   const s = typeof g.go === 'function' ? g.go() : g.go; // not done yet: glide the camera to the system it is about
   if (s >= 0) openPanel(s); else closePanel();
 });
@@ -884,8 +1016,8 @@ $('goal').addEventListener('click', () => {
 function showWarp() {
   S.done = true;
   const s = Math.round(last - S.start), next = WORLDS[(S.world + 1) % WORLDS.length].name;
-  $('warptxt').textContent = `${world().name} is alive. Took ${Math.floor(s / 60)}m ${s % 60}s. Next stop: ${next}, with all output x${boost() * 2} forever.`;
-  closePanel();
+  $('warptxt').textContent = `${world().name} is alive. Took ${Math.floor(s / 60)}m ${s % 60}s. Next stop: ${next}, with all output x${fmt(boost() * (has('echo') ? 2.5 : 2))} forever. You also earn a Star Seed to spend on Talents.`;
+  closePanel(); closeTalents();
   $('warp').hidden = false;
   for (const id of BEHIND_WARP) $(id).inert = true; // modal: nothing behind the dialog is reachable
   $('warpbtn').focus();
@@ -898,22 +1030,23 @@ function warp() {
   $('warp').hidden = true;
   for (const id of BEHIND_WARP) $(id).inert = false;
   tiles[0].focus({ preventScroll: true });
-  Object.assign(S, { world: S.world + 1, life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]) });
+  Object.assign(S, { world: S.world + 1, life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: S.seeds + 1 });
+  if (has('seedbank')) S.life = 1000 * boost();
   items.length = shots.length = 0;
   stage = 0; zoom = .3; flash = 1; shake = 1; // arrive from far away
   buildWorld();
-  toast(`ARRIVED AT ${world().name}. ${world().fact}`, true);
+  toast(`ARRIVED AT ${world().name}. +1 Star Seed for Talents. ${world().fact}`, true);
 }
 $('warpbtn').addEventListener('click', () => { warp(); save(); });
 
 // ---------- saving & offline progress (browser localStorage: no server, per device) ----------
-const SAVE = 'terraform-save-v1', AWAY_CAP = 12 * 3600; // offline time counted, in seconds
+const SAVE = 'terraform-save-v1', awayCap = () => (has('sleep') ? 24 : 12) * 3600; // offline time counted, in seconds
 const syncStage = () => { stage = STAGES.filter(s => healOf(S.earned) >= s.at).length; }; // no milestone pop-ups for old progress
 function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
-      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L },
+      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal },
       items: items.slice(-150).map(it => [Math.round(it.u), Math.round(it.v)]),
     }));
   } catch { /* private mode or full storage: keep playing unsaved */ }
@@ -922,7 +1055,9 @@ function save() {
 const validSave = d => d && Number.isFinite(d.t) && d.S
   && ['life', 'earned', 'taps', 'goal', 'world'].every(k => Number.isFinite(d.S[k]) && d.S[k] >= 0)
   && Array.isArray(d.S.on) && d.S.on.length === SYS.length
-  && Array.isArray(d.S.L) && d.S.L.length === SYS.length && d.S.L.every(l => Array.isArray(l) && l.length === 3 && l.every(n => Number.isInteger(n) && n >= 0 && n <= MAXL));
+  && Array.isArray(d.S.L) && d.S.L.length === SYS.length && d.S.L.every(l => Array.isArray(l) && l.length === 3 && l.every(n => Number.isInteger(n) && n >= 0 && n <= MAXL))
+  && (d.S.seeds === undefined || Number.isInteger(d.S.seeds) && d.S.seeds >= 0) // older saves have no talents yet
+  && (d.S.tal === undefined || Array.isArray(d.S.tal) && d.S.tal.every(id => TAL.some(t => t.id === id)));
 // Restores the save and credits the time since it was written. Returns false if there was nothing usable.
 function load() {
   let raw = null, d;
@@ -933,7 +1068,8 @@ function load() {
   }
   const v = d.S;
   Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: Math.min(v.goal | 0, GOALS.length), world: Math.min(v.world | 0, 60), // 2^world boost: cap keeps numbers finite
-    on: v.on.map(Boolean), L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0) });
+    on: v.on.map(Boolean), L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0),
+    seeds: v.seeds ?? Math.min(v.world | 0, 60), tal: [...new Set(v.tal || [])] }); // saves from before talents: one seed per planet already healed
   items.length = 0;
   if (Array.isArray(d.items)) for (const p of d.items) if (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])) items.push({ u: p[0], v: p[1], born: -9 });
   buildWorld();
@@ -942,7 +1078,7 @@ function load() {
 }
 // Credit the income earned since `since` (ms timestamp) while the game wasn't running.
 function away(since) {
-  const sec = Math.min(AWAY_CAP, Math.max(0, (Date.now() - since) / 1000)), gain = rateOf() * sec;
+  const sec = Math.min(awayCap(), Math.max(0, (Date.now() - since) / 1000)), gain = rateOf() * sec * (has('dream') ? 2 : 1);
   S.life += gain; S.earned += gain; // always credit, even a few seconds in another tab
   if (sec >= 30 && gain > 0) {
     const h = sec / 3600 | 0, m = (sec % 3600) / 60 | 0;
@@ -975,18 +1111,20 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('keydown', e => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
   e.preventDefault();
-  tapPlanet(CX + (Math.random() - .5) * R, CY - R * (.2 + Math.random() * .5));
+  tapSomewhere();
 });
+const tapSomewhere = () => tapPlanet(CX + (Math.random() - .5) * R, CY - R * (.2 + Math.random() * .5)); // a spot on the visible face
 function tapPlanet(x, y) {
-  const g = tapOf(rateOf());
+  const crit = Math.random() < (has('crit2') ? .2 : has('crit') ? .1 : 0); // Lucky Strike / Jackpot
+  const g = (tapOf(rateOf()) * (has('spark') ? 3 : 1) + (has('tapecho') ? rateOf() : 0)) * (crit ? 10 : 1);
   S.life += g; S.earned += g; S.taps++;
   if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.pink, end: true }); }
-  burst(x, y, [C.line, C.pink], 10);
-  floats.push({ x, y: y - 8, text: '+' + fmt(g), life: 1 });
+  burst(x, y, crit ? [C.sun, C.line, C.pink] : [C.line, C.pink], crit ? 24 : 10);
+  floats.push({ x, y: y - 8, text: '+' + fmt(g), life: 1, col: crit ? C.sun : C.line });
 }
 
 // ---------- loop ----------
-let uiTick = 0, resume = true, panelH = 0, paidAt = 0; // resume: skip one income gap after a hidden tab (away() already paid it)
+let uiTick = 0, resume = true, panelH = 0, autoT = 0, paidAt = 0; // resume: skip one income gap after a hidden tab (away() already paid it)
 function frame(ms) {
   const t = ms / 1000, dt = resume ? 0 : Math.max(0, Math.min(.1, t - last)), now = Date.now();
   // income runs on the wall clock: browsers also pause animation frames without hiding the tab (screen lock,
@@ -1000,6 +1138,8 @@ function frame(ms) {
   off = (off + dt * 6) % TW;
   shake = Math.max(0, shake - dt * 3); pulse = Math.max(0, pulse - dt * 1.5); flash = Math.max(0, flash - dt * 1.2);
   if (heal >= 1 && $('warp').hidden && !S.done) showWarp();
+  const aps = has('autotap2') ? 4 : has('autotap') ? 1 : 0; // Tap Bot / Tap Swarm: automatic taps per second
+  if (aps && (autoT += dt * aps) >= 1) { autoT -= 1; tapSomewhere(); }
 
   const reached = STAGES.filter(s => heal >= s.at).length;
   if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); pulse = 1; shake = .8; }
