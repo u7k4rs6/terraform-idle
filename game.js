@@ -481,7 +481,7 @@ function texPos(x, y) {
 }
 const blit = (s, x, y) => ctx.drawImage(s, Math.round(x - s.width / 2), Math.round(y - s.height / 2));
 function text(str, x, y, col = C.line) { // centred on x, bottom at y+5; dark shadow keeps it readable over the planet
-  const z = PX < 1.8 ? 2 : 1; // fine pixels (phones): double-size glyphs so labels stay readable
+  const z = PX < 2.5 ? 2 : 1; // fine pixels: double-size glyphs so labels and hit numbers stay readable
   y = Math.round(y + 5 - 5 * z);
   for (const [d, c] of [[z, C.deep], [0, col]]) {
     let cx = Math.round(x - (str.length * 4 - 1) * z / 2) + d;
@@ -501,11 +501,16 @@ function fire(s, real) {
   if (shot === 'pulse') { pulses.push({ r: R * .2, life: 1 }); return land(s, tx, ty, real); }
   shots.push({ s, sx, sy, tx, ty, t: 0, dur: .7 + Math.random() * .3, real });
 }
+// Seconds between automatic shots: more crew fires faster.
+const cadence = s => Math.max(.6, 4 / Math.sqrt(1 + S.L[s][0]));
 function land(s, x, y, real) {
   const big = SYS[s].shot === 'rocket' || SYS[s].shot === 'pulse';
   burst(x, y, [C.line, C.pink, C.soft], real ? 24 : 7, big ? 60 : 35);
   if (big) shake = Math.max(shake, real ? .7 : .2);
   if (real) { const [u, v] = texPos(x, y); items.push({ u, v, born: last }); }
+  // damage pop-up: what this system earns per shot, so the numbers match the real income
+  floats.push({ x, y: y - 8, text: '+' + fmt(sysRate(s, S.L[s]) * boost() * cadence(s)), life: 1.4, col: '#ffd6e0' }); // light pink: readable on any planet
+  if (floats.length > 14) floats.shift(); // keep the sky readable
 }
 
 // One texture column per screen column, squashed toward the edges, so a flat map reads as a spinning globe.
@@ -633,7 +638,7 @@ function draw(t, heal) {
   }
   for (const b of beams) { ctx.globalAlpha = b.life; P.line(b.x1, b.y1, b.x2, b.y2, b.col); P.fill(b.x2 - 1, b.y2 - 1, 3, 3, C.line); }
   for (const q of parts) { ctx.globalAlpha = q.life; P.dot(q.x, q.y, q.color); }
-  for (const f of floats) { ctx.globalAlpha = f.life; text(f.text, f.x, f.y); }
+  for (const f of floats) { ctx.globalAlpha = f.life; text(f.text, f.x, f.y, f.col); }
   ctx.globalAlpha = 1;
 
   // first-run hints: tap the planet, then the Laser Station once it's affordable
@@ -861,7 +866,7 @@ function frame(ms) {
   SYS.forEach((sy, s) => {
     if (!S.on[s] || t < (sy.next || 0) || shots.length + beams.length >= 8) return;
     fire(s, false);
-    sy.next = t + Math.max(.6, 4 / Math.sqrt(1 + S.L[s][0])) * (.7 + Math.random() * .6);
+    sy.next = t + cadence(s) * (.7 + Math.random() * .6);
   });
   for (const s of shots) if ((s.t += dt) >= s.dur) { s.done = true; land(s.s, s.tx, s.ty, s.real); }
   shots.splice(0, shots.length, ...shots.filter(s => !s.done));
