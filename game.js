@@ -570,6 +570,7 @@ function resize() {
   cv.style.width = W * PX + 'px'; cv.style.height = H * PX + 'px';
   layout();
   R = R0;
+  if (!(cam.ax > 0)) Object.assign(cam, { fx: W / 2, fy: H / 2, ax: W / 2, ay: H / 2 }); // centre the camera at the first real layout: embeds (itch.io) can start at 0x0, and centring on that gave NaN forever
   // self-check: every system on screen, below the HUD, out of the stat boxes, and no two overlapping
   const box = s => { const [x, y] = sysPos(s, 0), w = look(s).lit.width, h = look(s).lit.height; return [x - w / 2, y - h / 2, x + w / 2, y + h / 2]; };
   const bs = SYS.map((_, s) => box(s));
@@ -1507,7 +1508,7 @@ addEventListener('pagehide', save);
 setInterval(() => { if (!document.hidden) save(); }, 5000); // while hidden the saved time must stay at the moment we left
 
 cv.addEventListener('pointerdown', e => {
-  if (!e.isPrimary || e.button > 0) return; // right/middle click and extra fingers are not taps
+  if (!W || !e.isPrimary || e.button > 0) return; // not laid out yet; right/middle click and extra fingers are not taps
   const [ox, oy] = camOrigin(), x = (e.clientX / PX - ox) / cam.z, y = (e.clientY / PX - oy) / cam.z;
   let hit = -1, best = HIT / cam.z;
   SYS.forEach((_, s) => { const [sx, sy] = sysPos(s, last), d = Math.hypot(x - sx, y - sy); if (d <= best) { best = d; hit = s; } }); // nearest wins
@@ -1587,7 +1588,6 @@ if (new URLSearchParams(location.search).has('reset')) { // ?reset: start over (
 load();
 updateUI();
 resize();
-Object.assign(cam, { fx: W / 2, fy: H / 2, ax: W / 2, ay: H / 2 });
 requestAnimationFrame(frame);
 document.fonts?.ready.then(resize); // the HUD font changes box heights once it arrives
 if (!S.intro) guide(INTRO, true); // new players meet the commander
