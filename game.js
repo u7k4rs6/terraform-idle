@@ -75,8 +75,8 @@ const fmt = n => {
 };
 console.assert(fmt(999999) === '1.00m' && fmt(9999) === '10.0k' && fmt(1500) === '1.50k' && fmt(12.7) === '12', 'fmt rounding');
 
-// seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [] };
+// seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done
+const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false };
 const has = id => S.tal.includes(id);
 const boost = () => (has('echo') ? 2.5 : 2) ** S.world; // every world you finish multiplies all output for good
 // Talent multipliers: on everything, and on pairs of systems.
@@ -930,6 +930,7 @@ function updateUI() {
     b.setAttribute('aria-expanded', sel === s);
   });
   talTile.classList.toggle('ok', S.seeds > 0 && TAL.some(canTal));
+  updateGuide();
   if (W && hudH() !== layoutH) resize(); // goal text wrapped or the HUD changed size: re-fit the scene below it
 
   panelH = panel.offsetHeight; // read here (10x/s), not in every frame
@@ -1144,7 +1145,7 @@ function showWarp() {
 }
 
 // Start a fresh dead world: everything resets except the permanent warp boost.
-const BEHIND_WARP = ['c', 'top', 'side', 'toast', 'bar', 'panel', 'prev', 'next'];
+const BEHIND_WARP = ['c', 'top', 'side', 'toast', 'bar', 'panel', 'prev', 'next', 'guide'];
 function warp() {
   $('warp').hidden = true;
   for (const id of BEHIND_WARP) $(id).inert = false;
@@ -1157,9 +1158,83 @@ function warp() {
   items.length = shots.length = 0;
   stage = 0; zoom = .3; flash = 1; shake = 1; // arrive from far away
   buildWorld();
-  toast(`ARRIVED AT ${world().name}. +1 Star Seed for Talents.${fresh.length ? ` New systems: ${fresh.join(', ')}.` : ''} ${world().fact}`, true);
+  guide([ // arrival briefing
+    { text: `Welcome to ${world().name}, Engineer. You earned a Star Seed: spend it in Talents, bottom right.` },
+    fresh.length && { text: `New hardware online: ${fresh.join(', ')}. Same job as before: bring this world to life.` },
+    { text: world().fact },
+  ].filter(Boolean));
 }
 $('warpbtn').addEventListener('click', () => { warp(); save(); });
+
+// ---------- Commander Vos: the story intro and arrival briefings, in a speech bubble at the bottom left ----------
+// Portrait drawn from half-rows mirrored into a symmetric helmet. Two frames: helmet comm light on and off.
+const FACE = (() => {
+  const half = ['........kkkk', '......kkwwww', '.....kwsssss', '....kwsmmmmm', '...kwsmmmmmm', '...kwmlmmmmm', '..kwsmmdmmmm', '..kwmmmdmmmm',
+    '..kwmkkkkkkk', '..kwmkooyyyy', '..kwmkoooooo', '..kwmkqqqqqq', '..kwmmkkkkkk', '..kdwmmmmmmm', '...kdwmmsdsd', '...kdwmmsdsd',
+    '....kddmmmmm', '.....kkddddd', '......kknnnn', '...kkkkwnnnn', '.kkwwwwwmmmm', 'kwsssssmmmpm', 'kwsmmmmmmmmm', 'kwsmmdmmmmkm',
+    'kwsmmdmmmkmm', 'kwsmmmmmmkmm', 'kwsmmmmmmkmm', 'kkkkkkkkkkkk'];
+  const rows = half.map(r => r + [...r].reverse().join(''));
+  rows[9] = rows[9].slice(0, 12) + rows[9].slice(12).replace(/y/g, 'o'); // visor glint on the left only
+  rows[5] = rows[5].slice(0, 12) + rows[5].slice(12).replace('l', 'm'); // comm light on the left side of the helmet only
+  const col = { k: '#11131f', w: C.line, s: C.soft, m: '#3d4462', d: C.dim, n: C.bg, o: '#c98a2e', q: '#8a5a1e', y: C.sun, p: C.pink };
+  return [C.pink, C.dim].map(light => {
+    const c = mk(24, 28), g = c.getContext('2d');
+    rows.forEach((r, y) => [...r].forEach((ch, x) => { const f = ch === 'l' ? light : col[ch]; if (f) { g.fillStyle = f; g.fillRect(x, y, 1, 1); } }));
+    return c.toDataURL();
+  });
+})();
+// A line is { text, until, hint }: with `until` the game stays playable and the line moves on by itself once until() is true.
+const INTRO = [
+  { text: 'Welcome to the front line, Engineer. I run Terraform Corps out here.' },
+  { text: 'That rock below is CRIMSON. No air, no water, nothing grows. Our orders: bring it back to life.' },
+  { text: 'Start by tapping the planet. Every tap pulls Life out of the ground. Give me 10.',
+    until: () => S.taps >= 10, hint: () => `Tap the planet ${Math.min(10, S.taps)}/10` },
+  { text: () => `Good. Now put that Life to work: open the ${SYS[0].name} from the bar below and unlock it.`,
+    until: () => S.on[0], hint: () => (S.life >= unlockCost(0) ? 'Tap the first tile, then Unlock' : `Life ${fmt(S.life)}/${fmt(unlockCost(0))}: keep tapping, or claim the goal up top`) },
+  { text: 'Systems fire on their own, even while you are away. Upgrade them and they hit harder.' },
+  { text: 'Not sure what is next? Tap the goal bar up top. It pays a reward and points you where you are needed.' },
+  { text: 'Heal CRIMSON to 100% and we warp to a new world. Every healed world earns a Star Seed for Talents. Make me proud, Engineer.' },
+];
+let gLines = [], gi = 0, gShown = 0, gTimer = 0, gIntro = false;
+function guide(lines, intro = false) {
+  gLines = lines; gi = 0; gIntro = intro;
+  $('guide').hidden = false;
+  sayLine();
+}
+function sayLine() { // type the line out, a few letters per tick, the portrait bobbing while it talks
+  const full = val(gLines[gi].text);
+  gShown = 0; $('gsr').textContent = full;
+  $('guide').classList.add('talk');
+  clearInterval(gTimer);
+  gTimer = setInterval(() => {
+    gShown = Math.min(full.length, gShown + 2);
+    $('gsay').textContent = full.slice(0, gShown);
+    $('gface').src = FACE[(gShown >> 3) & 1]; // comm light blinks while talking
+    if (gShown >= full.length) { clearInterval(gTimer); $('guide').classList.remove('talk'); $('gface').src = FACE[0]; updateGuide(); }
+  }, 30);
+  updateGuide();
+}
+function nextLine() {
+  if (++gi < gLines.length) return sayLine();
+  clearInterval(gTimer);
+  $('guide').hidden = true;
+  if (gIntro) { S.intro = true; save(); }
+}
+$('gbubble').addEventListener('click', () => {
+  const full = val(gLines[gi].text);
+  if (gShown < full.length) { gShown = full.length - 1; return; } // first tap finishes the line
+  if (!gLines[gi].until) nextLine();
+});
+$('gskip').addEventListener('click', () => { gi = gLines.length - 1; nextLine(); });
+// Called 10x a second from updateUI: hint text, waiting steps, and staying clear of the panel and its arrows.
+function updateGuide() {
+  if ($('guide').hidden) return;
+  const l = gLines[gi], done = gShown >= val(l.text).length;
+  if (l.until && l.until()) return nextLine();
+  set($('ghint'), l.until ? '&gt; ' + val(l.hint) : done ? '&gt; tap to continue' : '');
+  $('ghint').classList.toggle('wait', !!l.until);
+  $('guide').style.bottom = (sel >= 0 ? panelH + 100 : $('bar').offsetHeight + 8) + 'px';
+}
 
 // ---------- saving & offline progress (browser localStorage: no server, per device) ----------
 const SAVE = 'terraform-save-v1', awayCap = () => (has('sleep') ? 24 : 12) * 3600; // offline time counted, in seconds
@@ -1168,7 +1243,7 @@ function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
-      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal },
+      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro },
       items: items.slice(-150).map(it => [Math.round(it.u), Math.round(it.v)]),
     }));
   } catch { /* private mode or full storage: keep playing unsaved */ }
@@ -1178,6 +1253,7 @@ const validSave = d => d && Number.isFinite(d.t) && d.S
   && ['life', 'earned', 'taps', 'goal', 'world'].every(k => Number.isFinite(d.S[k]) && d.S[k] >= 0)
   && Array.isArray(d.S.on) && d.S.on.length === SYS.length
   && Array.isArray(d.S.L) && d.S.L.length === SYS.length && d.S.L.every(l => Array.isArray(l) && l.length === 3 && l.every(n => Number.isInteger(n) && n >= 0 && n <= MAXL))
+  && (d.S.intro === undefined || typeof d.S.intro === 'boolean')
   && (d.S.seeds === undefined || Number.isInteger(d.S.seeds) && d.S.seeds >= 0) // older saves have no talents yet
   && (d.S.tal === undefined || Array.isArray(d.S.tal) && d.S.tal.every(id => TAL.some(t => t.id === id)));
 // Restores the save and credits the time since it was written. Returns false if there was nothing usable.
@@ -1191,7 +1267,7 @@ function load() {
   const v = d.S;
   Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: Math.min(v.goal | 0, GOALS.length), world: Math.min(v.world | 0, 60), // 2^world boost: cap keeps numbers finite
     on: v.on.map(Boolean), L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0),
-    seeds: v.seeds ?? Math.min(v.world | 0, 60), tal: [...new Set(v.tal || [])] }); // saves from before talents: one seed per planet already healed
+    seeds: v.seeds ?? Math.min(v.world | 0, 60), tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
   const was = SYS.map(sy => sy.id).join();
   setLoadout(S.world);
   if (W && SYS.map(sy => sy.id).join() !== was) resize(); // another tab warped meanwhile
@@ -1301,3 +1377,4 @@ resize();
 Object.assign(cam, { fx: W / 2, fy: H / 2, ax: W / 2, ay: H / 2 });
 requestAnimationFrame(frame);
 document.fonts?.ready.then(resize); // the HUD font changes box heights once it arrives
+if (!S.intro) guide(INTRO, true); // new players meet the commander
