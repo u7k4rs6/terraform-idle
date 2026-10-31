@@ -1,0 +1,12 @@
+{
+  "name": "Terraform",
+  "url": "utkarshbahuguna.me/terraform-idle",
+  "build": { "dir": ".." },
+  "mount": "..",
+  "viewport": { "width": 1280, "height": 720, "scale": 1.5 },
+  "fps": 30,
+  "edit": { "entry": "src/index.ts", "plan": "src/plan.mjs" },
+  "music": "node music.mjs",
+  "expectedSeconds": 110,
+  "maxSeconds": 180
+}

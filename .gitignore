@@ -4,5 +4,8 @@ screenshot-recreation/
 WhatsApp Image *.jpeg
 Talent.jpeg
 .trailer-kit/
-trailer/node_modules/
+trailer/node_modules
 trailer/out/
+trailer/.tmp/
+trailer/.cache/
+trailer/.remotion/
