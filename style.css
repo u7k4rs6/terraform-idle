@@ -32,6 +32,10 @@ button:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 #heal { height: 10px; margin: 6px 0 2px; background: var(--bg); }
 #healbar { height: 100%; width: 0; background: var(--pink); }
 #healtxt { color: var(--soft); font-size: 18px; }
+#sound { display: flex; gap: 8px; pointer-events: auto; padding-left: 8px; }
+#sound button { width: 40px; height: 40px; display: grid; place-items: center; background: var(--deep); border: 2px solid var(--dim); }
+#sound button[aria-pressed="false"] img { opacity: .3; }
+#sound img { width: 18px; image-rendering: pixelated; } /* 9px icons at 2x */
 
 /* bottom bar of system tiles */
 #bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; gap: 10px; padding: 12px 12px calc(14px + env(safe-area-inset-bottom)); background: var(--deep); border-top: 2px solid var(--line); }

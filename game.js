@@ -663,6 +663,7 @@ function text(str, x, y, col = C.line) { // centred on x (kept on screen), botto
 function fire(s, real) {
   const a = Math.PI + Math.random() * Math.PI, d = R * .8 * Math.sqrt(Math.random()); // upper half: the lower half is behind the ground
   const tx = CX + Math.cos(a) * d, ty = CY + Math.sin(a) * d, [sx, sy] = muzzle(s), shot = SYS[s].shot;
+  play(shot, real ? 1 : .35);
   if (shot === 'light') { // sunlight from above lands on both mirror panels, then one reflected beam heats the planet
     for (const px of [-21, 20]) {
       beams.push({ x1: sx + px - 26, y1: 0, x2: sx + px, y2: sy - 9, life: 1, col: C.sun, w: 2, a: .55, fade: 2 });
@@ -693,7 +694,7 @@ const cadence = s => Math.max(.6, 4 / Math.sqrt(1 + S.L[s][0]));
 function land(s, x, y, real, quiet) { // quiet: extra chunks of a spray, no pop-up
   const shot = SYS[s].shot, big = ['rocket', 'pulse', 'rod', 'lava', 'annihilate'].includes(shot);
   burst(x, y, shot === 'lava' ? [C.lava, C.sun, C.line] : shot === 'arc' ? [C.zap, C.line] : [C.line, C.pink, C.soft], real ? 24 : quiet ? 3 : 7, big ? 60 : 35);
-  if (big) shake = Math.max(shake, real ? .7 : .2);
+  if (big) { shake = Math.max(shake, real ? .7 : .2); play('boom', real ? 1 : .3); }
   if (quiet) return;
   if (real) { const [u, v] = texPos(x, y); items.push({ u, v, born: last }); if (items.length > 300) items.splice(0, items.length - 150); }
   // damage pop-up: what this system earns per shot, so the numbers match the real income
@@ -885,6 +886,127 @@ function draw(t, heal) {
   if (flash) { out.fillStyle = `rgba(233,236,245,${flash})`; out.fillRect(0, 0, cv.width, cv.height); } // warp flash
 }
 
+// ---------- sound: chiptune effects and music, all synthesized with Web Audio (no files) ----------
+// Browsers only allow audio after a user gesture, so the context starts on the first tap or key press.
+const PREF = 'terraform-sound'; // per-viewer toggles, kept apart from the save
+const pref = { sfx: true, music: true };
+try { Object.assign(pref, JSON.parse(localStorage.getItem(PREF)) || {}); } catch { /* storage blocked: defaults */ }
+let AC, sfxBus, musicBus, noiseBuf;
+function audioOn() {
+  if (AC) { if (AC.state === 'suspended' && !document.hidden) AC.resume(); return; }
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return; // no Web Audio: play silently
+  AC = new Ctx();
+  const comp = AC.createDynamicsCompressor(); // keeps stacked shots from clipping
+  comp.connect(AC.destination);
+  sfxBus = AC.createGain(); sfxBus.connect(comp);
+  const warm = AC.createBiquadFilter(); warm.type = 'lowpass'; warm.frequency.value = 2400; warm.connect(comp);
+  musicBus = AC.createGain(); musicBus.connect(warm);
+  setBuses();
+  noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+  const nd = noiseBuf.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  startMusic();
+}
+addEventListener('pointerdown', audioOn); addEventListener('keydown', audioOn);
+document.addEventListener('visibilitychange', () => { if (AC) document.hidden ? AC.suspend() : AC.resume(); }); // silent in background tabs
+const setBuses = () => { if (!AC) return; sfxBus.gain.value = pref.sfx ? .8 : 0; musicBus.gain.value = pref.music ? .5 : 0; };
+// One oscillator note: f (Hz) sliding to f2, envelope attack -> vol -> (hold) -> release. t: absolute start time.
+function tone({ f, f2, type = 'square', dur = .1, vol = .1, at = 0, t, attack = .005, release, bus = sfxBus }) {
+  t ??= AC.currentTime + at;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack);
+  if (release) g.gain.setValueAtTime(vol, t + dur - release);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g).connect(bus); o.start(t); o.stop(t + dur + .05);
+}
+// Filtered noise burst (whooshes, crackles, booms); freq slides to f2.
+function hiss({ dur = .2, vol = .1, at = 0, freq = 1000, f2, kind = 'lowpass', q = 1 }) {
+  const t = AC.currentTime + at, src = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain();
+  src.buffer = noiseBuf; fl.type = kind; fl.Q.value = q; fl.frequency.setValueAtTime(freq, t);
+  if (f2) fl.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  src.connect(fl).connect(g).connect(sfxBus); src.start(t); src.stop(t + dur + .05);
+}
+const arp = (fs, gap, o) => fs.forEach((f, i) => tone({ ...o, f, at: i * gap }));
+// k scales the volume: purchases and taps play full, automatic shots quietly so constant fire stays in the background
+const SFX = {
+  tap: () => tone({ f: 620 + Math.random() * 90, f2: 940, dur: .06, vol: .07 }),
+  crit: () => arp([880, 1320, 1760, 2640], .035, { type: 'triangle', dur: .09, vol: .08 }),
+  buy: () => arp([523, 659, 784], .045, { dur: .08, vol: .06 }),
+  unlock: () => arp([392, 523, 659, 784, 1047], .06, { dur: .18, vol: .07 }),
+  deny: () => tone({ f: 180, f2: 130, dur: .14, vol: .06 }),
+  ui: () => tone({ f: 520, dur: .04, vol: .04, type: 'triangle' }),
+  coin: () => { tone({ f: 988, dur: .07, vol: .07 }); tone({ f: 1319, dur: .22, vol: .07, at: .07 }); },
+  talent: () => arp([659, 988, 1319, 1976], .05, { type: 'triangle', dur: .25, vol: .07 }),
+  milestone: () => arp([523, 659, 784, 1047, 1319], .09, { type: 'triangle', dur: .4, vol: .07 }),
+  warp: () => { tone({ f: 90, f2: 1800, dur: 1.3, vol: .08, type: 'sawtooth' }); hiss({ dur: 1.3, vol: .06, freq: 200, f2: 6000, kind: 'bandpass', q: 2 }); },
+  talk: () => tone({ f: 220 + Math.random() * 140, dur: .035, vol: .025 }),
+  boom: k => hiss({ dur: .35, vol: .14 * k, freq: 500, f2: 50 }),
+  beam: k => tone({ f: 1500, f2: 260, dur: .13, vol: .05 * k, type: 'sawtooth' }),
+  light: k => tone({ f: 1100, f2: 1900, dur: .3, vol: .04 * k, type: 'sine', attack: .05 }),
+  drone: k => tone({ f: 190, f2: 240, dur: .35, vol: .035 * k, type: 'square', attack: .05 }),
+  rocket: k => hiss({ dur: .6, vol: .1 * k, freq: 300, f2: 2000, kind: 'bandpass', q: 3 }),
+  pod: k => tone({ f: 480, f2: 240, dur: .1, vol: .05 * k, type: 'triangle' }),
+  pulse: k => tone({ f: 90, f2: 40, dur: .6, vol: .14 * k, type: 'sine' }),
+  rod: k => tone({ f: 2400, f2: 300, dur: .28, vol: .035 * k, type: 'square' }),
+  arc: k => { hiss({ dur: .2, vol: .09 * k, freq: 3500, kind: 'highpass' }); tone({ f: 60, dur: .2, vol: .05 * k, type: 'sawtooth' }); },
+  rocks: k => hiss({ dur: .18, vol: .07 * k, freq: 900, kind: 'bandpass', q: 4 }),
+  lava: k => tone({ f: 140, f2: 420, dur: .35, vol: .05 * k, type: 'triangle' }),
+  gas: k => hiss({ dur: .7, vol: .05 * k, freq: 700, f2: 300 }),
+  annihilate: k => { tone({ f: 70, f2: 28, dur: .9, vol: .2 * k, type: 'sine' }); hiss({ dur: .5, vol: .08 * k, freq: 3000, f2: 150 }); },
+};
+const lastPlay = {};
+function play(name, k = 1) {
+  if (!AC || AC.state !== 'running' || !pref.sfx || !SFX[name]) return;
+  const now = AC.currentTime;
+  if (now - (lastPlay[name] || 0) < .06) return; // the same sound piling up in one instant is just louder noise
+  lastPlay[name] = now;
+  SFX[name](k);
+}
+
+// Background music: a slow spacey loop in A minor (Am F C G), 16th-note grid, scheduled a little ahead of the clock.
+const STEP = 60 / 80 / 4, mtof = m => 440 * 2 ** ((m - 69) / 12);
+const CHORDS = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]], SPARK = [69, 72, 74, 76, 79, 81];
+let mStep = 0, mNext = 0;
+function startMusic() {
+  mNext = AC.currentTime + .2;
+  setInterval(() => {
+    if (AC.state !== 'running') return;
+    if (mNext < AC.currentTime) mNext = AC.currentTime + .05; // resumed after a pause: don't play the backlog
+    while (mNext < AC.currentTime + .35) { musicStep(mStep, mNext); mStep = (mStep + 1) % 64; mNext += STEP; }
+  }, 100);
+}
+function musicStep(s, t) {
+  const beat = s & 15, ch = CHORDS[s >> 4], m = { t, bus: musicBus };
+  if (beat === 0) ch.forEach(n => tone({ ...m, f: mtof(n), type: 'triangle', dur: STEP * 16, vol: .035, attack: .6, release: 1 })); // pad
+  if (beat % 8 === 0) tone({ ...m, f: mtof(ch[0] - 24), type: 'triangle', dur: STEP * 7, vol: .11, attack: .01, release: .4 }); // bass
+  if (beat % 2 === 0) tone({ ...m, f: mtof(ch[[0, 1, 2, 1, 0, 2, 1, 2][beat >> 1]] + 12), type: 'square', dur: STEP * 1.8, vol: .018 }); // arpeggio
+  if (beat === 10 && Math.random() < .4) tone({ ...m, f: mtof(SPARK[Math.random() * SPARK.length | 0] + 12), type: 'sine', dur: STEP * 10, vol: .03, attack: .05, release: .8 }); // sparkle
+}
+
+// Music and sound toggles under the stat boxes (pixel icons; dimmed when off).
+const ICONS = {
+  music: tiny(['..wwwwww.', '..wwwwww.', '..w....w.', '..w....w.', '..w....w.', 'www..www.', 'www..www.', 'www..www.', '.........']),
+  sfx: tiny(['...w.....', '..ww..w..', 'www.w..w.', 'w...w.w.w', 'w...w.w.w', 'w...w.w.w', 'www.w..w.', '..ww..w..', '...w.....']),
+};
+const soundRow = document.createElement('div');
+soundRow.id = 'sound';
+for (const key of ['music', 'sfx']) {
+  const b = document.createElement('button');
+  b.innerHTML = `<img src="${ICONS[key].toDataURL()}" alt="">`;
+  const sync = () => { b.setAttribute('aria-pressed', pref[key]); b.setAttribute('aria-label', `${key === 'music' ? 'Music' : 'Sound effects'} ${pref[key] ? 'on' : 'off'}`); };
+  b.addEventListener('click', () => {
+    pref[key] = !pref[key]; sync(); audioOn(); setBuses();
+    try { localStorage.setItem(PREF, JSON.stringify(pref)); } catch { /* not remembered */ }
+    play('ui');
+  });
+  sync(); soundRow.append(b);
+}
+$('side').append(soundRow);
+
 // ---------- hud / panel ----------
 const set = (el, html) => { if (el._h !== html) el.innerHTML = el._h = html; }; // skip needless DOM rewrites
 const tiles = SYS.map((sy, s) => {
@@ -960,14 +1082,14 @@ function updateUI() {
 function rowClick(k) {
   const s = sel, sy = SYS[s], [x, y] = sysPos(s, last);
   if (!S.on[s]) {
-    if (!unlocked(s) || S.life < unlockCost(s)) return;
-    S.life -= unlockCost(s); S.on[s] = true; pulse = 1;
+    if (!unlocked(s) || S.life < unlockCost(s)) return play('deny');
+    S.life -= unlockCost(s); S.on[s] = true; pulse = 1; play('unlock');
     toast(sy.fact);
     burst(x, y, [C.line, C.pink, C.soft], 40, 60);
   } else {
     const L = S.L[s], c = price(s, k);
-    if (L[k] >= MAXL || S.life < c) return;
-    S.life -= c; L[k]++;
+    if (L[k] >= MAXL || S.life < c) return play('deny');
+    S.life -= c; L[k]++; play('buy');
     burst(x, y, [C.pink, C.line], 14, 40);
   }
   fire(s, true);
@@ -976,6 +1098,7 @@ function rowClick(k) {
 
 let opener = null; // element that opened the panel, to give focus back on close
 function openPanel(s) {
+  play('ui');
   const wasClosed = panel.hidden;
   if (wasClosed) opener = document.activeElement;
   sel = s; panel.hidden = false; updateUI();
@@ -1089,12 +1212,13 @@ function renderTal() {
 }
 $('tbuy').addEventListener('click', () => {
   const t = talById[selTal];
-  if (!canTal(t) || S.seeds < 1) return;
-  S.seeds--; S.tal.push(t.id);
+  if (!canTal(t) || S.seeds < 1) return play('deny');
+  S.seeds--; S.tal.push(t.id); play('talent');
   renderTal(); updateUI(); save();
 });
 $('treset').addEventListener('click', () => { S.seeds += S.tal.length; S.tal = []; renderTal(); updateUI(); save(); }); // free respec
 function openTalents() {
+  play('ui');
   closePanel();
   talOpener = document.activeElement;
   $('talents').hidden = false;
@@ -1128,13 +1252,13 @@ function toast(msg, big) {
 $('goal').addEventListener('click', () => {
   const g = GOALS[S.goal];
   if (!g) return;
-  if (g.reward && g.get() >= g.need) { const r = rewardOf(g); S.life += r; S.earned += r; S.goal++; return updateUI(); }
+  if (g.reward && g.get() >= g.need) { const r = rewardOf(g); S.life += r; S.earned += r; S.goal++; play('coin'); return updateUI(); }
   const s = typeof g.go === 'function' ? g.go() : g.go; // not done yet: glide the camera to the system it is about
   if (s >= 0) openPanel(s); else closePanel();
 });
 
 function showWarp() {
-  S.done = true;
+  S.done = true; play('milestone');
   const s = Math.round(last - S.start), next = WORLDS[(S.world + 1) % WORLDS.length].name;
   $('warptxt').textContent = `${world().name} is alive. Took ${Math.floor(s / 60)}m ${s % 60}s. Next stop: ${next}, with all output x${fmt(boost() * (has('echo') ? 2.5 : 2))} forever. You also earn a Star Seed to spend on Talents.`;
   closePanel(); closeTalents();
@@ -1147,7 +1271,7 @@ function showWarp() {
 // Start a fresh dead world: everything resets except the permanent warp boost.
 const BEHIND_WARP = ['c', 'top', 'side', 'toast', 'bar', 'panel', 'prev', 'next', 'guide'];
 function warp() {
-  $('warp').hidden = true;
+  $('warp').hidden = true; play('warp');
   for (const id of BEHIND_WARP) $(id).inert = false;
   tiles[0].focus({ preventScroll: true });
   Object.assign(S, { world: S.world + 1, life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: S.seeds + 1 });
@@ -1269,6 +1393,7 @@ function sayLine() { // type the line out, a few letters per tick, the portrait 
   clearInterval(gTimer);
   gTimer = setInterval(() => {
     gShown = Math.min(full.length, gShown + 2);
+    if (gShown % 4 === 0 && full[gShown - 1] !== ' ') play('talk'); // commander blips as he talks
     $('gsay').textContent = full.slice(0, gShown);
     $('gface').src = FACE[(gShown >> 3) & 1]; // comm light blinks while talking
     if (gShown >= full.length) { clearInterval(gTimer); $('guide').classList.remove('talk'); $('gface').src = FACE[0]; updateGuide(); }
@@ -1383,6 +1508,7 @@ function tapPlanet(x, y) {
   S.life += g; S.earned += g; S.taps++;
   if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.pink, end: true }); }
   burst(x, y, crit ? [C.sun, C.line, C.pink] : [C.line, C.pink], crit ? 24 : 10);
+  play(crit ? 'crit' : 'tap');
   floats.push({ x, y: y - 8, text: '+' + fmt(g), life: 1, col: crit ? C.sun : C.line });
 }
 
@@ -1405,7 +1531,7 @@ function frame(ms) {
   if (aps && (autoT += dt * aps) >= 1) { autoT -= 1; tapSomewhere(); }
 
   const reached = STAGES.filter(s => heal >= s.at).length;
-  if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); pulse = 1; shake = .8; }
+  if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); pulse = 1; shake = .8; play('milestone'); }
   zoom += (1 - zoom) * Math.min(1, dt * 1.5);
   R = Math.round(R0 * zoom);
 
