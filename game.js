@@ -40,9 +40,10 @@ console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 
 const fmt = n => {
   if (n < 1000) return n < 10 ? String(Math.floor(n * 10) / 10) : String(Math.floor(n));
   let k = -1;
-  while (n >= 1000 && k < 3) { n /= 1000; k++; }
-  return n.toFixed(n < 10 ? 2 : n < 100 ? 1 : 0) + 'kmbt'[k];
+  while (n >= 999.5 && k < 3) { n /= 1000; k++; } // 999.5 not 1000: values that round up move to the next unit
+  return n.toFixed(n < 9.995 ? 2 : n < 99.95 ? 1 : 0) + 'kmbt'[k];
 };
+console.assert(fmt(999999) === '1.00m' && fmt(9999) === '10.0k' && fmt(1500) === '1.50k' && fmt(12.7) === '12', 'fmt rounding');
 
 const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]) };
 const boost = () => 2 ** S.world; // every world you finish doubles all output for good
@@ -356,7 +357,7 @@ function compose(t, heal) {
   m.globalCompositeOperation = 'source-over';
   m.clearRect(0, 0, TW, TH);
   if (heal >= 1) m.fillRect(0, 0, TW, TH);
-  else for (const it of items.slice(0, 150)) {
+  else for (const it of items.slice(-150)) { // newest patches: every purchase keeps showing up
     const r = (9 + 34 * heal * heal) * Math.min(1, (t - it.born) / 1.5);
     for (const dx of [-TW, 0, TW]) { m.beginPath(); m.arc(it.u + dx, it.v, r, 0, 7); m.fill(); }
   }
@@ -385,14 +386,18 @@ const SLOT = [
 for (const sl of SLOT) if (!sl.ground) { const r = sl.a * Math.PI / 180; sl.x = Math.cos(r) * ORBIT; sl.y = Math.sin(r) * ORBIT; }
 const ISLE = 17; // rock hanging under the island systems
 const HIT = 20; // touch radius in scene pixels (40+ CSS px), a bit larger than the sprites
-let K, PX, W, H, R0, R, CX, CY, GY, TOP, SIDE, FY = 1, city = [], hq, cityCv, grainCv;
+let K, PX, W, H, R0, R, CX, CY, GY, TOP, SIDE, FY = 1, city = [], hq, cityCv, grainCv, layoutH = 0;
+const hudH = () => $('top').offsetHeight + $('side').offsetHeight; // the layout depends on these heights
 function resize() {
+  if (!innerWidth || !innerHeight) return; // hidden iframe / minimised: nothing to lay out (0-size canvases would throw)
   // about 320 art pixels across the short side, each a whole number (K) of device pixels; PX = CSS pixels per art pixel
   const dpr = devicePixelRatio || 1;
   K = Math.max(1, Math.round(Math.min(innerWidth, innerHeight) * dpr / 320));
   PX = K / dpr;
   W = Math.ceil(innerWidth / PX); H = Math.ceil(innerHeight / PX);
   cv.width = W * K; cv.height = H * K; buf.width = W; buf.height = H;
+  ctx.imageSmoothingEnabled = false; // resizing a canvas resets its context; stretched planet columns must stay crisp
+  layoutH = hudH();
   cv.style.width = W * PX + 'px'; cv.style.height = H * PX + 'px';
   layout();
   R = R0;
@@ -437,7 +442,8 @@ function layout() {
     if (n < .1) { gg.fillStyle = 'rgba(10,8,20,.22)'; gg.fillRect(x, y, 1, 1); } else if (n > .96) { gg.fillStyle = 'rgba(255,255,255,.06)'; gg.fillRect(x, y, 1, 1); }
   }
 }
-addEventListener('resize', resize);
+let resizeTimer;
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 120); }); // dragging a window: rebuild once it settles
 // Where system s is drawn, tapped, fired from and bracketed. Only motion: a 1px idle bob.
 function sysPos(s, t) {
   const sl = SLOT[s], h = LOOK[s].lit.height, w = LOOK[s].lit.width;
@@ -480,8 +486,11 @@ function texPos(x, y) {
   return [(off + (Math.asin(dx / R) / Math.PI + .5) * TW / 2 + TW) % TW, Math.max(0, Math.min(TH, ((y - CY) / h + .5) * TH))];
 }
 const blit = (s, x, y) => ctx.drawImage(s, Math.round(x - s.width / 2), Math.round(y - s.height / 2));
-function text(str, x, y, col = C.line) { // centred on x, bottom at y+5; dark shadow keeps it readable over the planet
-  const z = PX < 2.5 ? 2 : 1; // fine pixels: double-size glyphs so labels and hit numbers stay readable
+const glyphZ = () => PX < 2.5 ? 2 : 1; // fine pixels: double-size glyphs so labels and hit numbers stay readable
+const textW = str => (str.length * 4 - 1) * glyphZ();
+function text(str, x, y, col = C.line) { // centred on x (kept on screen), bottom at y+5; dark shadow keeps it readable over the planet
+  const z = glyphZ(), half = textW(str) / 2;
+  x = Math.max(half + 1, Math.min(W - half - 2, x));
   y = Math.round(y + 5 - 5 * z);
   for (const [d, c] of [[z, C.deep], [0, col]]) {
     let cx = Math.round(x - (str.length * 4 - 1) * z / 2) + d;
@@ -500,7 +509,8 @@ function fire(s, real) {
       burst(sx + px, sy - 9, [C.sun, C.line], 3, 12); // glint on the panel
     }
     beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.sun, w: 2, end: true, fade: 2.5, delay: .15 }); // reflection follows a beat later
-    setTimeout(() => land(s, tx, ty, real), 150);
+    const w0 = S.world;
+    setTimeout(() => { if (S.world === w0) land(s, tx, ty, real); }, 150); // skip if a warp started a new world meanwhile
     return;
   }
   if (shot === 'beam') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.pink, end: true }); return land(s, tx, ty, real); }
@@ -513,7 +523,7 @@ function land(s, x, y, real) {
   const big = SYS[s].shot === 'rocket' || SYS[s].shot === 'pulse';
   burst(x, y, [C.line, C.pink, C.soft], real ? 24 : 7, big ? 60 : 35);
   if (big) shake = Math.max(shake, real ? .7 : .2);
-  if (real) { const [u, v] = texPos(x, y); items.push({ u, v, born: last }); }
+  if (real) { const [u, v] = texPos(x, y); items.push({ u, v, born: last }); if (items.length > 300) items.splice(0, items.length - 150); }
   // damage pop-up: what this system earns per shot, so the numbers match the real income
   floats.push({ x, y: y - 8, text: '+' + fmt(sysRate(s, S.L[s]) * boost() * cadence(s)), life: 1.4, col: '#ffd6e0' }); // light pink: readable on any planet
   if (floats.length > 14) floats.shift(); // keep the sky readable
@@ -564,14 +574,15 @@ function drawCity(p) {
   for (let cx = x + 4; cx < x + w - 3; cx += 5) p.line(cx, y + 9, cx, GY - 1);
   p.line(x + w - 4, y, x + w - 4, y - 6); p.ring(x + w - 4, y - 8, 3, 2, 0, Math.PI);
 }
-// Atmosphere ring in clean solid bands (white rim, then three fading steps), rebuilt only when its size or colour changes.
+// Atmosphere ring in clean solid bands (white rim, then three fading steps). Built at the full planet size (R0) and
+// rebuilt only when that size or the colour changes; the warp zoom just scales it.
 let haloCv, haloKey;
 function haloRing(rgb) {
-  const key = R + '|' + rgb;
+  const r = Math.round(R0), key = r + '|' + rgb;
   if (key === haloKey) return haloCv;
-  const s = (Math.ceil(R * 1.32) + 1) * 2, m = s / 2, c = mk(s, s), g = c.getContext('2d');
+  const s = (Math.ceil(r * 1.32) + 1) * 2, m = s / 2, c = mk(s, s), g = c.getContext('2d');
   for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
-    const t = (Math.hypot(x - m + .5, y - m + .5) - R) / (R * .3);
+    const t = (Math.hypot(x - m + .5, y - m + .5) - r) / (r * .3);
     if (t < 0 || t > 1) continue;
     g.fillStyle = t < .07 ? C.line : `rgba(${rgb},${t < .3 ? .6 : t < .6 ? .32 : .14})`;
     g.fillRect(x, y, 1, 1);
@@ -601,7 +612,11 @@ function drawMarks(s, t) {
   const on = S.on[s], img = LOOK[s].lit;
   const [x, y] = sysPos(s, t), w = img.width, h = img.height, x0 = Math.round(x - w / 2), y0 = Math.round(y - h / 2);
   if (on) text(`${S.L[s][0] + S.L[s][1] + S.L[s][2]}/${MAXL * 3}`, x, y0 - 8);
-  else if (unlocked(s)) { const label = fmt(SYS[s].unlock); ctx.drawImage(T.energy, Math.round(x - label.length * 2 - 6), y0 - 9); text(label, x + 4, y0 - 8, C.soft); }
+  else if (unlocked(s)) { // price tag: energy icon + amount, kept on screen as one unit
+    const label = fmt(SYS[s].unlock), lw = textW(label), total = 9 + lw, left = Math.max(1, Math.min(W - total - 2, Math.round(x - total / 2)));
+    ctx.drawImage(T.energy, left, y0 - 10);
+    text(label, left + 9 + lw / 2, y0 - 8, C.soft);
+  }
   if (canAct(s)) P.fill(x0 + w + 1, y0 - 4, 3, 3, C.pink);
   if (sel === s) { // blinking selection brackets
     const col = Math.sin(t * 6) > 0 ? C.line : C.soft, l = x0 - 4, r = x0 + w + 3, tp = y0 - 4, bt = y0 + h + 3;
@@ -614,8 +629,8 @@ function draw(t, heal) {
   for (const [x, y, k] of stars) if (x < W && y < H && (k || Math.sin(t * 2 + x) > -.5)) P.dot(x, y, k > 4 ? C.soft : C.dot);
   // atmosphere: the world's dead glow fading to its alive glow (colour stepped so the dithered ring is rarely rebuilt)
   const { dg, ag } = world(), c = dg.map((d, k) => Math.round(d + (ag[k] - d) * heal) & ~7).join(',');
-  const halo = haloRing(c);
-  ctx.drawImage(halo, CX - halo.width / 2, CY - halo.height / 2);
+  const halo = haloRing(c), hs = Math.round(halo.width * R / Math.round(R0)); // hs = halo size at the current (zoomed) radius
+  ctx.drawImage(halo, Math.round(CX - hs / 2), Math.round(CY - hs / 2), hs, hs);
 
   const ma = t * .2, moon = [Math.round(CX + Math.cos(ma) * R * 1.2), Math.round(CY + Math.sin(ma) * R * .36 - Math.cos(ma) * R * .1)], front = Math.sin(ma) > 0;
   if (stage >= 3) P.ring(CX, CY, R * 1.38, R * .2, Math.PI, 2 * Math.PI);
@@ -672,7 +687,7 @@ const set = (el, html) => { if (el._h !== html) el.innerHTML = el._h = html; }; 
 const tiles = SYS.map((sy, s) => {
   const b = document.createElement('button');
   b.className = 'tile';
-  b.setAttribute('aria-label', sy.name);
+  b.setAttribute('aria-label', sy.name); b.setAttribute('aria-controls', 'panel');
   b.addEventListener('click', () => (sel === s ? closePanel() : openPanel(s)));
   $('bar').append(b);
   return b;
@@ -707,9 +722,12 @@ function updateUI() {
     set(b, `<img src="${S.on[s] ? tileSrc[s].lit : unlocked(s) ? tileSrc[s].next : tileSrc[s].sil}" alt="">`);
     b.classList.toggle('ok', canAct(s));
     b.classList.toggle('sel', sel === s);
+    b.setAttribute('aria-expanded', sel === s);
   });
+  if (W && hudH() !== layoutH) resize(); // goal text wrapped or the HUD changed size: re-fit the scene below it
 
-  for (const a of ['prev', 'next']) { $(a).hidden = sel < 0; $(a).style.bottom = panel.offsetHeight + 20 + 'px'; }
+  panelH = panel.offsetHeight; // read here (10x/s), not in every frame
+  for (const a of ['prev', 'next']) { $(a).hidden = sel < 0; $(a).style.bottom = panelH + 20 + 'px'; }
   if (sel < 0) return;
   const s = sel, sy = SYS[s], L = S.L[s];
   $('pname').textContent = sy.name;
@@ -718,7 +736,7 @@ function updateUI() {
   rows.forEach(({ r, text: el, buy }, k) => {
     if (!S.on[s]) { // locked: one unlock row
       r.hidden = k > 0;
-      buy.disabled = !unlocked(s) || S.life < sy.unlock;
+      buy.setAttribute('aria-disabled', !unlocked(s) || S.life < sy.unlock); // aria-disabled, not disabled: keeps keyboard focus
       set(el, `Unlock ${sy.name}<small>${unlocked(s) ? sy.desc : `Unlock the ${SYS[s - 1].name} first.`}</small>`);
       return set(buy, `Unlock<span>${ICON}${fmt(sy.unlock)}</span>`);
     }
@@ -726,7 +744,7 @@ function updateUI() {
     const desc = [`Adds +1 ${sy.unit} to the crew.`, `${eff} per level.`, `${eff} per level, stacking.`][k];
     const cur = [[`${1 + L[0]} ${sy.unit}s`, '+1'], [`+${25 * L[1]}%`, '+25%'], [`x${(1.08 ** L[2]).toFixed(2)}`, 'x1.08']][k];
     r.hidden = false;
-    buy.disabled = max || S.life < c;
+    buy.setAttribute('aria-disabled', max || S.life < c);
     set(el, `${name}<span class="lv">Lv.${L[k]}</span><small>${desc}</small><small class="cur">Current: ${cur[0]} ${max ? '' : `<i>${cur[1]}</i>`}</small>`);
     set(buy, max ? 'MAX' : `Upgrade<span>${ICON}${fmt(c)}</span>`);
   });
@@ -749,15 +767,27 @@ function rowClick(k) {
   updateUI();
 }
 
-function openPanel(s) { sel = s; panel.hidden = false; updateUI(); }
-function closePanel() { sel = -1; panel.hidden = true; updateUI(); }
+let opener = null; // element that opened the panel, to give focus back on close
+function openPanel(s) {
+  const wasClosed = panel.hidden;
+  if (wasClosed) opener = document.activeElement;
+  sel = s; panel.hidden = false; updateUI();
+  if (wasClosed) rows[0].buy.focus({ preventScroll: true });
+}
+function closePanel() {
+  if (panel.hidden) return;
+  sel = -1; panel.hidden = true; updateUI();
+  if (opener?.isConnected && opener !== document.body) opener.focus({ preventScroll: true });
+  if (pendingToast) { toast(...pendingToast); pendingToast = null; }
+}
 $('pclose').addEventListener('click', closePanel);
 $('prev').addEventListener('click', () => openPanel((sel + SYS.length - 1) % SYS.length));
 $('next').addEventListener('click', () => openPanel((sel + 1) % SYS.length));
 addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 
-let toastTimer;
+let toastTimer, pendingToast = null;
 function toast(msg, big) {
+  if (sel >= 0 && innerWidth < 900) { pendingToast = [msg, big]; return; } // phones hide toasts under the panel: show it on close
   const el = $('toast');
   el.textContent = msg; el.classList.add('show'); el.classList.toggle('big', !!big);
   clearTimeout(toastTimer);
@@ -777,13 +807,17 @@ function showWarp() {
   $('warptxt').textContent = `${world().name} is alive. Took ${Math.floor(s / 60)}m ${s % 60}s. Next stop: ${next}, with all output x${boost() * 2} forever.`;
   closePanel();
   $('warp').hidden = false;
+  for (const id of BEHIND_WARP) $(id).inert = true; // modal: nothing behind the dialog is reachable
   $('warpbtn').focus();
   burst(CX, CY, [C.line, C.pink, C.soft], 80, 90);
 }
 
 // Start a fresh dead world: everything resets except the permanent warp boost.
+const BEHIND_WARP = ['c', 'top', 'side', 'toast', 'bar', 'panel', 'prev', 'next'];
 function warp() {
   $('warp').hidden = true;
+  for (const id of BEHIND_WARP) $(id).inert = false;
+  tiles[0].focus({ preventScroll: true });
   Object.assign(S, { world: S.world + 1, life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]) });
   items.length = shots.length = 0;
   stage = 0; zoom = .3; flash = 1; shake = 1; // arrive from far away
@@ -798,9 +832,9 @@ const syncStage = () => { stage = STAGES.filter(s => healOf(S.earned) >= s.at).l
 function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
-      t: Date.now(), played: last - S.start,
+      t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
       S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L },
-      items: items.slice(0, 150).map(it => [Math.round(it.u), Math.round(it.v)]),
+      items: items.slice(-150).map(it => [Math.round(it.u), Math.round(it.v)]),
     }));
   } catch { /* private mode or full storage: keep playing unsaved */ }
 }
@@ -809,22 +843,28 @@ const validSave = d => d && Number.isFinite(d.t) && d.S
   && ['life', 'earned', 'taps', 'goal', 'world'].every(k => Number.isFinite(d.S[k]) && d.S[k] >= 0)
   && Array.isArray(d.S.on) && d.S.on.length === SYS.length
   && Array.isArray(d.S.L) && d.S.L.length === SYS.length && d.S.L.every(l => Array.isArray(l) && l.length === 3 && l.every(n => Number.isInteger(n) && n >= 0 && n <= MAXL));
+// Restores the save and credits the time since it was written. Returns false if there was nothing usable.
 function load() {
-  let d;
-  try { d = JSON.parse(localStorage.getItem(SAVE)); } catch { return; }
-  if (!validSave(d)) return;
+  let raw = null, d;
+  try { raw = localStorage.getItem(SAVE); d = JSON.parse(raw); } catch { d = null; }
+  if (!validSave(d)) {
+    try { if (raw) localStorage.setItem(SAVE + '-bad', raw); } catch { /* ignore */ } // keep an unreadable save instead of letting the next autosave erase it
+    return false;
+  }
   const v = d.S;
-  Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: Math.min(v.goal | 0, GOALS.length), world: v.world | 0,
+  Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: Math.min(v.goal | 0, GOALS.length), world: Math.min(v.world | 0, 60), // 2^world boost: cap keeps numbers finite
     on: v.on.map(Boolean), L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0) });
+  items.length = 0;
   if (Array.isArray(d.items)) for (const p of d.items) if (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])) items.push({ u: p[0], v: p[1], born: -9 });
   buildWorld();
   away(d.t);
+  return true;
 }
 // Credit the income earned since `since` (ms timestamp) while the game wasn't running.
 function away(since) {
   const sec = Math.min(AWAY_CAP, Math.max(0, (Date.now() - since) / 1000)), gain = rateOf() * sec;
+  S.life += gain; S.earned += gain; // always credit, even a few seconds in another tab
   if (sec >= 30 && gain > 0) {
-    S.life += gain; S.earned += gain;
     const h = sec / 3600 | 0, m = (sec % 3600) / 60 | 0;
     toast(`WELCOME BACK. In ${h ? h + 'h ' : ''}${m}m away your colony made ${fmt(gain)} life.`, true);
   }
@@ -832,32 +872,47 @@ function away(since) {
 }
 let hiddenAt = 0; // background tabs pause the game loop, so catch up when the tab comes back
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { hiddenAt = Date.now(); save(); } else if (hiddenAt) { away(hiddenAt); hiddenAt = 0; }
+  if (document.hidden) { hiddenAt = Date.now(); save(); return; }
+  if (!hiddenAt) return;
+  // reload the latest save: picks up anything another tab played meanwhile and credits the away time once
+  if (!load()) away(hiddenAt);
+  hiddenAt = 0; resume = true;
 });
 addEventListener('pagehide', save);
 setInterval(() => { if (!document.hidden) save(); }, 5000); // while hidden the saved time must stay at the moment we left
 
 cv.addEventListener('pointerdown', e => {
+  if (!e.isPrimary || e.button > 0) return; // right/middle click and extra fingers are not taps
   const [ox, oy] = camOrigin(), x = (e.clientX / PX - ox) / cam.z, y = (e.clientY / PX - oy) / cam.z;
   let hit = -1, best = HIT / cam.z;
   SYS.forEach((_, s) => { const [sx, sy] = sysPos(s, last), d = Math.hypot(x - sx, y - sy); if (d <= best) { best = d; hit = s; } }); // nearest wins
   if (hit >= 0) return openPanel(hit);
   if (onCity(x, y)) return; // buildings and ground are solid
   if ((x - CX) ** 2 + (y - CY) ** 2 > R * R) return closePanel();
+  tapPlanet(x, y);
+});
+// keyboard players tap the planet with Enter or Space while the canvas has focus
+cv.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  tapPlanet(CX + (Math.random() - .5) * R, CY - R * (.2 + Math.random() * .5));
+});
+function tapPlanet(x, y) {
   const g = tapOf(rateOf());
   S.life += g; S.earned += g; S.taps++;
   if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.pink, end: true }); }
   burst(x, y, [C.line, C.pink], 10);
   floats.push({ x, y: y - 8, text: '+' + fmt(g), life: 1 });
-});
+}
 
 // ---------- loop ----------
-let uiTick = 0;
+let uiTick = 0, resume = true, panelH = 0; // resume: skip one frame gap after a hidden tab (away() already paid it)
 function frame(ms) {
-  const t = ms / 1000, dt = Math.min(.1, t - last);
-  last = t;
+  const t = ms / 1000, gap = resume ? 0 : Math.min(30, t - last), dt = Math.min(.1, gap);
+  last = t; resume = false;
+  if (!W) return requestAnimationFrame(frame); // no layout yet (0-size viewport)
   const r = rateOf();
-  S.life += r * dt; S.earned += r * dt;
+  S.life += r * gap; S.earned += r * gap; // income uses the real gap so slow frames don't lose it; animation uses capped dt
   const heal = healOf(S.earned);
   off = (off + dt * 6) % TW;
   shake = Math.max(0, shake - dt * 3); pulse = Math.max(0, pulse - dt * 1.5); flash = Math.max(0, flash - dt * 1.2);
@@ -870,7 +925,7 @@ function frame(ms) {
 
   // camera: zoom 2x onto the selected system, centred in the open space right of the stats and above the panel
   const k = Math.min(1, dt * 6), open = sel >= 0, [fx, fy] = open ? sysPos(sel, 0) : [W / 2, H / 2];
-  const tgt = { z: open ? 2 : 1, fx, fy, ax: open ? (SIDE.r + W) / 2 : W / 2, ay: open ? (TOP + (H - panel.offsetHeight / PX)) / 2 : H / 2 };
+  const tgt = { z: open ? 2 : 1, fx, fy, ax: open ? (SIDE.r + W) / 2 : W / 2, ay: open ? (TOP + (H - panelH / PX)) / 2 : H / 2 };
   for (const key in tgt) { cam[key] += (tgt[key] - cam[key]) * k; if (Math.abs(tgt[key] - cam[key]) < .02) cam[key] = tgt[key]; } // snap to exact values: whole-pixel scale when settled
 
   // unlocked systems keep firing; more crew fires faster, but only a few shots fly at once
@@ -897,3 +952,4 @@ updateUI();
 resize();
 Object.assign(cam, { fx: W / 2, fy: H / 2, ax: W / 2, ay: H / 2 });
 requestAnimationFrame(frame);
+document.fonts?.ready.then(resize); // the HUD font changes box heights once it arrives
