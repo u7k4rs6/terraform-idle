@@ -1,30 +1,60 @@
 'use strict';
 
 // Muted slate night, white line-art, soft pink accents.
-const C = { bg: '#2b3047', deep: '#1f2333', line: '#e9ecf5', dim: '#59607f', dot: '#6f79a3', soft: '#8f99c4', pink: '#e98aa3', sil: '#1c2030', sun: '#ffe08a' };
+const C = { bg: '#2b3047', deep: '#1f2333', line: '#e9ecf5', dim: '#59607f', dot: '#6f79a3', soft: '#8f99c4', pink: '#e98aa3', sil: '#1c2030', sun: '#ffe08a', zap: '#bfe6ff', lava: '#ff8a3d', gas: '#c9d6b8' };
 
-// Systems in unlock order. Each has 3 upgrades (max Lv 50):
+// Every system in the game. Each world fields six of them (LOADOUTS); a system's cost and output come from its
+// unlock slot (TIER), so any loadout paces the same. Each has 3 upgrades (max Lv 50):
 // [0] +1 crew, [1] +25% output per level, [2] x1.08 output per level (compounding).
-const SYS = [
-  { id: 'laser', name: 'Laser Station', unlock: 100, base: 3, shot: 'beam', unit: 'gunner',
+const CATALOG = {
+  laser: { name: 'Laser Station', shot: 'beam', unit: 'gunner',
     ups: [['Recruit Gunner', '+1 gunner'], ['Stabilized Optics', '+25% damage'], ['Overcharged Capacitors', 'x1.08 laser output']],
     desc: 'Blasts the crust to release trapped gases.', fact: 'In 2013 NASA beamed data from Moon orbit to Earth by laser at 622 megabits per second.' },
-  { id: 'solar', name: 'Solar Mirror', unlock: 1200, base: 20, shot: 'light', unit: 'mirror',
+  solar: { name: 'Solar Mirror', shot: 'light', unit: 'mirror',
     ups: [['Add Mirror', '+1 mirror'], ['Polished Glass', '+25% heat'], ['Focusing Lens', 'x1.08 solar output']],
     desc: 'Focuses sunlight to warm the frozen ground.', fact: 'Mars averages −60 °C. Giant orbital mirrors are a real proposal for warming it up.' },
-  { id: 'drone', name: 'Drone Hive', unlock: 1.5e4, base: 140, shot: 'drone', unit: 'drone',
+  drone: { name: 'Drone Hive', shot: 'drone', unit: 'drone',
     ups: [['Build Drone', '+1 drone'], ['Seed Payload', '+25% seeds'], ['Swarm AI', 'x1.08 hive output']],
     desc: 'Drones scatter hardy microbes across the surface.', fact: 'A single seed-planting drone can drop tens of thousands of seed pods in a day.' },
-  { id: 'rocket', name: 'Comet Launcher', unlock: 2e5, base: 1000, shot: 'rocket', unit: 'pilot',
+  rocket: { name: 'Comet Launcher', shot: 'rocket', unit: 'pilot',
     ups: [['Hire Pilot', '+1 pilot'], ['Bigger Ice Payload', '+25% water'], ['Fusion Boosters', 'x1.08 launcher output']],
     desc: 'Hurls comet ice at the planet to fill its oceans.', fact: 'Some of Earth’s water may have been delivered by icy comets and asteroids.' },
-  { id: 'bio', name: 'Bio Seeder', unlock: 2.5e6, base: 7000, shot: 'pod', unit: 'technician',
+  bio: { name: 'Bio Seeder', shot: 'pod', unit: 'technician',
     ups: [['Lab Technician', '+1 technician'], ['Hardy Strains', '+25% growth'], ['Spore Clouds', 'x1.08 seeder output']],
     desc: 'Fires pods of engineered plants into the soil.', fact: 'Some lichens survived 34 days in a lab chamber simulating the surface of Mars.' },
-  { id: 'core', name: 'Terra Core', unlock: 1.5e7, base: 40000, shot: 'pulse', unit: 'engineer',
+  core: { name: 'Terra Core', shot: 'pulse', unit: 'engineer',
     ups: [['Engineer', '+1 engineer'], ['Plasma Containment', '+25% power'], ['Chain Reaction', 'x1.08 core output']],
     desc: 'Pulses raw energy through the whole planet.', fact: 'Fusion powers the Sun: it turns 4 million tonnes of matter into energy every second.' },
+  striker: { name: 'Kinetic Striker', shot: 'rod', unit: 'loader',
+    ups: [['Rod Loader', '+1 loader'], ['Tungsten Cores', '+25% impact'], ['Mag Rails', 'x1.08 striker output']],
+    desc: 'Drops tungsten rods from orbit to crack open the crust.', fact: 'A tungsten rod dropped from orbit would hit at around 3 km per second, with no explosive at all.' },
+  coil: { name: 'Storm Coil', shot: 'arc', unit: 'coil',
+    ups: [['Wind Coil', '+1 coil'], ['Superconductors', '+25% voltage'], ['Chain Lightning', 'x1.08 coil output']],
+    desc: 'Fires lightning into the air to turn nitrogen into plant food.', fact: 'Lightning on Earth turns millions of tonnes of air nitrogen into natural fertilizer every year.' },
+  asteroid: { name: 'Asteroid Drill', shot: 'rocks', unit: 'miner',
+    ups: [['Hire Miner', '+1 miner'], ['Diamond Bits', '+25% ore'], ['Deep Shafts', 'x1.08 drill output']],
+    desc: 'Mines a captured asteroid and showers the planet with minerals.', fact: 'The asteroid 16 Psyche may be mostly metal. NASA launched a probe to visit it in 2023.' },
+  volcano: { name: 'Volcano Igniter', shot: 'lava', unit: 'geologist',
+    ups: [['Geologist', '+1 geologist'], ['Deeper Vents', '+25% gas'], ['Magma Surge', 'x1.08 igniter output']],
+    desc: 'Wakes sleeping volcanoes to thicken the atmosphere.', fact: 'Olympus Mons on Mars is the tallest volcano in the solar system, about 22 km high.' },
+  forge: { name: 'Atmo Forge', shot: 'gas', unit: 'stoker',
+    ups: [['Stoker', '+1 stoker'], ['Super Greenhouse', '+25% warming'], ['Twin Stacks', 'x1.08 forge output']],
+    desc: 'Pumps out greenhouse gases that trap heat and warm the planet.', fact: 'Studies suggest factories making strong greenhouse gases could warm Mars by tens of degrees.' },
+  antimatter: { name: 'Antimatter Reactor', shot: 'annihilate', unit: 'physicist',
+    ups: [['Physicist', '+1 physicist'], ['Magnetic Bottle', '+25% yield'], ['Annihilation Cascade', 'x1.08 reactor output']],
+    desc: 'Annihilates matter with antimatter for raw terraforming power.', fact: 'CERN traps antihydrogen in magnetic bottles. One gram of antimatter meeting matter would release about 43 kilotons of energy.' },
+};
+// Unlock slots 0-2 hang in orbit, 3-5 stand on the ground (see SLOT), so every loadout lists 3 orbital then 3 ground systems.
+const TIER = [[100, 3], [1200, 20], [1.5e4, 140], [2e5, 1000], [2.5e6, 7000], [1.5e7, 40000]].map(([unlock, base]) => ({ unlock, base }));
+const LOADOUTS = [
+  ['laser', 'solar', 'drone', 'rocket', 'bio', 'core'],                 // world 1
+  ['striker', 'coil', 'asteroid', 'volcano', 'forge', 'antimatter'],    // world 2: all new
+  ['laser', 'coil', 'drone', 'volcano', 'bio', 'antimatter'],           // world 3: a mix of both
+  ['striker', 'solar', 'asteroid', 'rocket', 'forge', 'core'],          // world 4: the other mix, then the cycle repeats
 ];
+let SYS;
+const setLoadout = w => { SYS = LOADOUTS[w % LOADOUTS.length].map((id, s) => ({ id, ...CATALOG[id], ...TIER[s] })); };
+setLoadout(0);
 const MAXL = 50, UPM = [[.25, 1.17], [.8, 1.2], [2.5, 1.25]]; // upgrade k costs unlock * UPM[k][0] * UPM[k][1]^level
 const GOAL = 5e8; // total life earned for a fully terraformed planet (a sim player takes ~10 min)
 
@@ -66,29 +96,29 @@ const pct = () => Math.floor(healOf(S.earned) * 100);
 const topSys = () => S.L.reduce((b, L, s) => (Math.max(...L) > Math.max(...S.L[b]) ? s : b), 0); // furthest-upgraded system
 const GOALS = [
   ['Tap the planet 10 times', () => S.taps, 10, 50, -1],
-  ['Unlock the Laser Station', () => +S.on[0], 1, 50, 0],
-  ['Recruit 5 gunners', () => S.L[0][0], 5, 200, 0],
-  ['Unlock the Solar Mirror', () => +S.on[1], 1, 500, 1],
-  ['Stabilized Optics to Lv 5', () => S.L[0][1], 5, 1000, 0],
+  [() => `Unlock the ${SYS[0].name}`, () => +S.on[0], 1, 50, 0],
+  [() => `Recruit 5 ${SYS[0].unit}s`, () => S.L[0][0], 5, 200, 0],
+  [() => `Unlock the ${SYS[1].name}`, () => +S.on[1], 1, 500, 1],
+  [() => `${SYS[0].ups[1][0]} to Lv 5`, () => S.L[0][1], 5, 1000, 0],
   ['Terraform 25%', pct, 25, 3000, -1],
-  ['Unlock the Drone Hive', () => +S.on[2], 1, 6000, 2],
+  [() => `Unlock the ${SYS[2].name}`, () => +S.on[2], 1, 6000, 2],
   ['Get any upgrade to Lv 20', () => Math.max(...S.L.flat()), 20, 2e4, topSys],
-  ['Unlock the Comet Launcher', () => +S.on[3], 1, 5e4, 3],
+  [() => `Unlock the ${SYS[3].name}`, () => +S.on[3], 1, 5e4, 3],
   ['Terraform 50%', pct, 50, 1e5, -1],
-  ['Unlock the Bio Seeder', () => +S.on[4], 1, 1e6, 4],
+  [() => `Unlock the ${SYS[4].name}`, () => +S.on[4], 1, 1e6, 4],
   ['Terraform 75%', pct, 75, 3e6, -1],
-  ['Unlock the Terra Core', () => +S.on[5], 1, 2e7, 5],
+  [() => `Unlock the ${SYS[5].name}`, () => +S.on[5], 1, 2e7, 5],
   ['Terraform 100%', pct, 100, 0, -1],
 ].map(([text, get, need, reward, go]) => ({ text, get, need, reward, go }));
 
-// Worlds in warp order. Each heals from `dead` tones into its own alien palette; dg/ag = dead/alive atmosphere glow.
+// Worlds in warp order (CRIMSON first). Each heals from `dead` tones into its own alien palette; dg/ag = dead/alive atmosphere glow.
 const WORLDS = [
-  { name: 'ARES', sea: ['#1b6f78', '#23909a'], coast: '#e8c46a', land: ['#7b4bc4', '#b07cf0'], caps: '#f2e9ff',
-    dead: [[74, 32, 34], [112, 46, 38], [158, 72, 46], [206, 120, 74]], crater: '#4a2022', dg: [233, 138, 163], ag: [154, 166, 224],
-    fact: 'Some scientists think early life on Earth was purple, using a pigment called retinal instead of chlorophyll.' },
   { name: 'CRIMSON', sea: ['#4a0d26', '#6e1636'], coast: '#ffb36b', land: ['#d6204f', '#ff5c7a'], caps: '#ffe0e6',
     dead: [[40, 38, 44], [66, 62, 70], [98, 92, 98], [140, 132, 136]], crater: '#24222a', dg: [160, 150, 170], ag: [255, 110, 140],
     fact: 'Plants on worlds around dim red stars might grow red or even black to soak up every bit of light.' },
+  { name: 'ARES', sea: ['#1b6f78', '#23909a'], coast: '#e8c46a', land: ['#7b4bc4', '#b07cf0'], caps: '#f2e9ff',
+    dead: [[74, 32, 34], [112, 46, 38], [158, 72, 46], [206, 120, 74]], crater: '#4a2022', dg: [233, 138, 163], ag: [154, 166, 224],
+    fact: 'Some scientists think early life on Earth was purple, using a pigment called retinal instead of chlorophyll.' },
   { name: 'KRYPTONITE', sea: ['#0b3d2a', '#0f5c3a'], coast: '#d8ff6b', land: ['#39ff6a', '#a6ff3d'], caps: '#eaffd8',
     dead: [[18, 16, 28], [34, 28, 48], [56, 44, 74], [88, 70, 110]], crater: '#0c0a14', dg: [140, 110, 190], ag: [120, 240, 150],
     fact: 'PSR J1719-1438 b may be a planet-sized crystal of carbon: a diamond world circling a dead star.' },
@@ -228,7 +258,7 @@ const diagLight = (x, y, w, h) => 1 - (x / w + y / h) / 2; // sun from the top-l
 
 // Hand-drawn line-art for the six systems (native resolution, 1px lines).
 // Where shots leave each sprite, relative to its centre (default: the centre).
-const MUZZLE = { laser: [-30, 16] }; // laser: the needle tip (local (-25, 0) rotated and scaled)
+const MUZZLE = { laser: [-30, 16], striker: [-28, 16], coil: [0, 19], asteroid: [24, 15], volcano: [0, -8], forge: [8, -16], antimatter: [0, -7] }; // laser/striker: the tip, local (-25|-26, 0) rotated and scaled
 const ART = {
   // long drill-cannon angled down-left at the planet: slot panel, vent ribs, rear cap, tapered nose, needle nozzle, battery packs
   laser: art(64, 42, p => {
@@ -298,8 +328,66 @@ const ART = {
     p.ring(16, 12, 15, 3, 0, Math.PI); // orbit ring, front half
     p.ring(16, 12, 15, 3, Math.PI, 2 * Math.PI, C.dim);
   }),
+  // orbital railgun angled down-left: breech and rod magazine, twin rails wrapped in magnetic coils, tail fin
+  striker: art(64, 44, p => {
+    const r = p.rot(34, 22, -.5, 1.3); // local -x points down-left at the planet
+    r.poly([[14, 5], [19, 8], [12, 5]]); // tail fin
+    r.rect(8, -6, 10, 12); // breech
+    r.rect(10, -9, 6, 3); for (const x of [11, 13, 15]) r.seg(x, -8, x, -7, C.dim); // rod magazine
+    r.seg(-22, -3, 8, -3); r.seg(-22, 3, 8, 3); // twin rails
+    for (const x of [-18, -12, -6, 0]) r.rect(x, -4, 2, 8, C.pink); // magnetic coils
+    r.seg(-24, -3, -24, 3); r.dot(-26, 0, C.line); // muzzle ring, rod tip
+    r.seg(18, -2, 21, -2); r.seg(18, 2, 21, 2); // thrusters
+  }),
+  // tesla satellite: winding rings narrowing up to a charged sphere, side orbs, emitter prong pointing down
+  coil: art(48, 40, p => {
+    p.line(14, 30, 6, 30); p.line(34, 30, 42, 30); p.disc(4, 30, 2); p.disc(44, 30, 2); // arms and side orbs
+    p.box(15, 26, 18, 8); p.line(17, 29, 30, 29, C.dim); p.fill(19, 31, 10, 1, C.pink); // base
+    p.line(24, 8, 24, 26, C.dim); // coil core
+    for (const [y, rx] of [[23, 9], [19, 7], [15, 5]]) p.ring(24, y, rx, 2); // windings
+    p.disc(24, 7, 5); p.disc(24, 7, 2, C.pink); // charged sphere
+    for (const [x, y] of [[16, 3], [33, 4], [30, 0], [17, 10]]) p.dot(x, y, C.pink); // sparks
+    p.line(24, 34, 24, 38); p.dot(24, 39, C.pink); // emitter prong
+  }),
+  // captured asteroid: cratered rock, drill rig biting into it, crane, ore hopper and a chute toward the planet
+  asteroid: art(56, 36, p => {
+    p.poly([[6, 14], [12, 6], [22, 4], [31, 8], [35, 17], [31, 27], [20, 31], [9, 28], [4, 21]]);
+    for (const [x, y, rx, ry] of [[15, 13, 3, 2], [24, 22, 4, 3], [12, 23, 2, 1]]) p.ring(x, y, rx, ry, 0, 2 * Math.PI, C.dim);
+    p.box(26, 0, 12, 7); p.fill(28, 2, 3, 2, C.pink); // rig
+    p.line(30, 7, 32, 12); p.line(34, 7, 32, 12); // drill bit
+    p.line(37, 3, 46, 3); p.line(46, 3, 46, 8); // crane
+    p.box(33, 24, 9, 5); // ore hopper
+    p.line(42, 27, 52, 33); p.line(42, 29, 51, 34); p.dot(53, 34, C.pink); // chute
+    p.dot(47, 15); p.fill(49, 19, 2, 2, C.line); // drifting ore
+  }),
+  // volcano with an igniter clamp over its glowing crater, lava runs and rock strata
+  volcano: art(34, 32, p => {
+    p.poly([[1, 31], [12, 9], [22, 9], [33, 31]]);
+    p.line(7, 22, 27, 22, C.dim); p.line(4, 27, 30, 27, C.dim); // strata
+    p.fill(13, 9, 9, 2, C.pink); p.line(15, 11, 13, 17, C.pink); p.line(20, 11, 22, 15, C.pink); // crater and lava runs
+    p.box(10, 5, 15, 4); // igniter clamp
+    p.line(12, 5, 12, 1); p.line(22, 5, 22, 1); p.line(12, 1, 22, 1); p.dot(17, 0, C.pink); // frame and beacon
+  }),
+  // factory hall with three smokestacks and glowing furnace windows
+  forge: art(34, 34, p => {
+    p.box(4, 4, 6, 17); p.box(13, 9, 5, 12); p.box(22, 1, 7, 20); // stacks
+    p.fill(5, 7, 4, 1, C.pink); p.fill(23, 4, 5, 1, C.pink); // warning bands
+    p.box(1, 20, 32, 14); // hall
+    for (let x = 4; x < 30; x += 7) p.fill(x, 24, 4, 3, C.pink); // furnace windows
+    p.line(2, 30, 31, 30, C.dim);
+  }),
+  // antimatter orb floating in a magnetic field between two coiled pylons
+  antimatter: art(34, 34, p => {
+    p.box(1, 28, 32, 6); p.line(4, 31, 29, 31, C.dim); // base
+    p.box(3, 6, 5, 23); p.box(26, 6, 5, 23); p.box(2, 3, 7, 4); p.box(25, 3, 7, 4); // pylons and caps
+    for (const y of [11, 16, 21, 25]) { p.line(4, y, 6, y, C.pink); p.line(27, y, 29, y, C.pink); } // coils
+    p.ring(17, 16, 12, 3, Math.PI, 2 * Math.PI, C.dim); // field ring, back half
+    p.disc(17, 16, 6); p.disc(17, 16, 3, C.pink); // orb
+    p.ring(17, 16, 12, 3, 0, Math.PI); // field ring, front half
+  }),
 };
-const LOOK = SYS.map((s, i) => ({ next: shadow(ART[s.id], false), sil: shadow(ART[s.id], true), lit: grit(ART[s.id], i, diagLight) }));
+const LOOKS = Object.fromEntries(Object.entries(ART).map(([id, a], i) => [id, { next: shadow(a, false), sil: shadow(a, true), lit: grit(a, i, diagLight) }]));
+const look = s => LOOKS[SYS[s].id]; // the sprites of whatever system holds slot s
 
 // Small sprites drawn as-is: w = line, n = fill, p = pink.
 function tiny(rows) {
@@ -315,7 +403,7 @@ const T = {
   energy: tiny(['..www..', '.wwwww.', 'wwwnwww', 'wwnnnww', 'wwwnwww', '.wwwww.', '..www..']),
 };
 const ICON = `<img class="ico" src="${T.energy.toDataURL()}" alt="life">`;
-const tileSrc = LOOK.map(l => ({ lit: l.lit.toDataURL(), sil: l.sil.toDataURL(), next: l.next.toDataURL() }));
+const TILE = Object.fromEntries(Object.entries(LOOKS).map(([id, l]) => [id, { lit: l.lit.toDataURL(), sil: l.sil.toDataURL(), next: l.next.toDataURL() }]));
 
 // 3x5 pixel font for numbers on the canvas (smooth canvas text would blur when scaled).
 const GLYPH = { 0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001', 5: '111100111001111', 6: '111100111101111', 7: '111001001001001', 8: '111101111101111', 9: '111101111001111',
@@ -483,7 +571,7 @@ function resize() {
   layout();
   R = R0;
   // self-check: every system on screen, below the HUD, out of the stat boxes, and no two overlapping
-  const box = s => { const [x, y] = sysPos(s, 0), w = LOOK[s].lit.width, h = LOOK[s].lit.height; return [x - w / 2, y - h / 2, x + w / 2, y + h / 2]; };
+  const box = s => { const [x, y] = sysPos(s, 0), w = look(s).lit.width, h = look(s).lit.height; return [x - w / 2, y - h / 2, x + w / 2, y + h / 2]; };
   const bs = SYS.map((_, s) => box(s));
   console.assert(bs.every(([l, t, r, b]) => l >= 0 && r <= W && t - 8 >= TOP && b <= GY + 1 && !(l < SIDE.r && t < SIDE.b)), 'system off screen or under the HUD', bs);
   console.assert(bs.every((a, i) => bs.every((b, j) => i === j || a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1])), 'systems overlap', bs);
@@ -502,7 +590,7 @@ function layout() {
   FY = Math.max(1, Math.min(1.15, (CY - TOP - 30) / (ORBIT * R0))); // tall screens: a slight upward stretch, still hugging the planet
   // low background colony: a mix of building types, leaving open ground around the ground systems.
   // It grows outward from the core as the planet heals (see drawColony), so `city` is sorted by distance from the centre.
-  const clear = SYS.map((_, s) => SLOT[s].ground && [CX + SLOT[s].x * R0 - LOOK[s].lit.width / 2 - 4, CX + SLOT[s].x * R0 + LOOK[s].lit.width / 2 + 4]).filter(Boolean);
+  const clear = SYS.map((_, s) => SLOT[s].ground && [CX + SLOT[s].x * R0 - look(s).lit.width / 2 - 4, CX + SLOT[s].x * R0 + look(s).lit.width / 2 + 4]).filter(Boolean);
   const kinds = ['office', 'tower', 'band', 'dome', 'office', 'needle', 'band', 'tower'];
   city = [];
   for (let x = 1, n = 0; x < W - 6; n++) {
@@ -520,7 +608,7 @@ let resizeTimer;
 addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 120); }); // dragging a window: rebuild once it settles
 // Where system s is drawn, tapped, fired from and bracketed. Only motion: a 1px idle bob.
 function sysPos(s, t) {
-  const sl = SLOT[s], h = LOOK[s].lit.height, w = LOOK[s].lit.width;
+  const sl = SLOT[s], h = look(s).lit.height, w = look(s).lit.width;
   let x = CX + sl.x * R0, y = sl.ground ? GY - h / 2 : CY + sl.y * R0 * FY + Math.sin(t * 1.5 + s * 1.3);
   x = Math.max(w / 2 + 2, Math.min(W - w / 2 - 2, x));
   if (!sl.ground) y = Math.max(TOP + h / 2 + 10, y); // room for the label above
@@ -587,14 +675,26 @@ function fire(s, real) {
   }
   if (shot === 'beam') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.pink, end: true }); return land(s, tx, ty, real); }
   if (shot === 'pulse') { pulses.push({ r: R * .2, life: 1 }); return land(s, tx, ty, real); }
-  shots.push({ s, sx, sy, tx, ty, t: 0, dur: .7 + Math.random() * .3, real });
+  if (shot === 'arc') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.zap, end: true, fade: 4, zig: true }); return land(s, tx, ty, real); }
+  if (shot === 'annihilate') { // white beam, then a shockwave ring where it hits
+    beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.line, w: 3, end: true, fade: 3 });
+    pulses.push({ x: tx, y: ty, r: 2, life: 1, col: C.line });
+    return land(s, tx, ty, real);
+  }
+  if (shot === 'rocks') { // a spray of three chunks; only the first one pays out and leaves a patch
+    for (let k = 0; k < 3; k++) shots.push({ s, sx, sy, tx: tx + (k - 1) * 7, ty: ty + (Math.random() - .5) * 8, t: 0, dur: .8 + k * .12, real: real && !k, quiet: k > 0 });
+    return;
+  }
+  const dur = { rod: .28, lava: 1.1, gas: 1.7 }[shot] ?? .7 + Math.random() * .3; // rods are fast, lava bombs lob, gas drifts
+  shots.push({ s, sx, sy, tx, ty, t: 0, dur, real });
 }
 // Seconds between automatic shots: more crew fires faster.
 const cadence = s => Math.max(.6, 4 / Math.sqrt(1 + S.L[s][0]));
-function land(s, x, y, real) {
-  const big = SYS[s].shot === 'rocket' || SYS[s].shot === 'pulse';
-  burst(x, y, [C.line, C.pink, C.soft], real ? 24 : 7, big ? 60 : 35);
+function land(s, x, y, real, quiet) { // quiet: extra chunks of a spray, no pop-up
+  const shot = SYS[s].shot, big = ['rocket', 'pulse', 'rod', 'lava', 'annihilate'].includes(shot);
+  burst(x, y, shot === 'lava' ? [C.lava, C.sun, C.line] : shot === 'arc' ? [C.zap, C.line] : [C.line, C.pink, C.soft], real ? 24 : quiet ? 3 : 7, big ? 60 : 35);
   if (big) shake = Math.max(shake, real ? .7 : .2);
+  if (quiet) return;
   if (real) { const [u, v] = texPos(x, y); items.push({ u, v, born: last }); if (items.length > 300) items.splice(0, items.length - 150); }
   // damage pop-up: what this system earns per shot, so the numbers match the real income
   floats.push({ x, y: y - 8, text: '+' + fmt(sysOut(s) * cadence(s)), life: 1.4, col: '#ffd6e0' }); // light pink: readable on any planet
@@ -689,12 +789,12 @@ const canAct = s => S.on[s] ? S.L[s].some((l, k) => l < MAXL && S.life >= price(
 
 // A system: shaded line-art when unlocked, dim outline when next, dotted silhouette otherwise.
 function drawSystem(s, t) {
-  const look = LOOK[s], img = S.on[s] ? look.lit : unlocked(s) ? look.next : look.sil;
+  const lk = look(s), img = S.on[s] ? lk.lit : unlocked(s) ? lk.next : lk.sil;
   blit(img, ...sysPos(s, t));
 }
 // Labels, price tags, pink dots and selection brackets go on top of every system, so nothing hides them.
 function drawMarks(s, t) {
-  const on = S.on[s], img = LOOK[s].lit;
+  const on = S.on[s], img = look(s).lit;
   const [x, y] = sysPos(s, t), w = img.width, h = img.height, x0 = Math.round(x - w / 2), y0 = Math.round(y - h / 2);
   if (on) text(`${S.L[s][0] + S.L[s][1] + S.L[s][2]}/${MAXL * 3}`, x, y0 - 8);
   else if (unlocked(s)) { // price tag: energy icon + amount, kept on screen as one unit
@@ -731,7 +831,7 @@ function draw(t, heal) {
   for (let k = 0; k < crew; k++) { const f = facePos(bots[k][0], bots[k][1]); if (f) blit(T.bot, f[0], f[1] + (Math.sin(t * 4 + k) > .6 ? -1 : 0)); }
   if (rk) P.ring(CX, CY, rr, rr * .145, 0, Math.PI);
   if (mo && front) drawMoon(...moon, mo);
-  for (const p of pulses) { ctx.globalAlpha = p.life; P.ring(CX, CY, p.r, p.r, 0, 2 * Math.PI, C.pink); }
+  for (const p of pulses) { ctx.globalAlpha = p.life; P.ring(p.x ?? CX, p.y ?? CY, p.r, p.r, 0, 2 * Math.PI, p.col || C.pink); } // planet-wide or at an impact
   ctx.globalAlpha = 1;
 
   P.fill(0, GY, W, H - GY, C.deep); P.fill(0, GY, W, 1, C.line); // ground
@@ -740,15 +840,30 @@ function draw(t, heal) {
   SYS.forEach((_, s) => drawMarks(s, t));
 
   for (const s of shots) {
-    const k = s.t / s.dur, x = s.sx + (s.tx - s.sx) * k, y = s.sy + (s.ty - s.sy) * k, shot = SYS[s.s].shot;
+    const k = s.t / s.dur, x = s.sx + (s.tx - s.sx) * k, shot = SYS[s.s].shot;
+    const y = s.sy + (s.ty - s.sy) * k - (shot === 'lava' ? Math.sin(k * Math.PI) * 28 : 0); // lava bombs arc up first
     if (shot === 'rocket') { blit(T.missile, x, y); parts.push({ x, y, vx: (Math.random() - .5) * 6, vy: (Math.random() - .5) * 6, life: .5, color: Math.random() < .5 ? C.pink : C.line }); }
     else if (shot === 'drone') blit(T.drone, x, y);
+    else if (shot === 'rod') { const dx = (s.tx - s.sx) * .08, dy = (s.ty - s.sy) * .08; P.line(x - dx, y - dy, x, y, C.line); P.line(x - dx + 1, y - dy, x + 1, y, C.soft); } // streak
+    else if (shot === 'rocks') { P.fill(x - 1, y - 1, 2, 2, '#b8a99a'); if (Math.random() < .5) parts.push({ x, y, vx: 0, vy: 0, life: .3, color: C.dim }); }
+    else if (shot === 'lava') { P.fill(x - 1, y - 1, 3, 3, C.lava); P.dot(x, y, C.sun); parts.push({ x, y, vx: (Math.random() - .5) * 8, vy: 6, life: .6, color: Math.random() < .5 ? C.lava : C.sun }); }
+    else if (shot === 'gas') { // a puff that swells as it drifts
+      const r = 2 + k * 5;
+      ctx.globalAlpha = .7 - k * .3; P.ring(x, y, r, r * .8, 0, 2 * Math.PI, C.gas); P.ring(x + r * .6, y - 1, r * .6, r * .5, 0, 2 * Math.PI, C.gas); ctx.globalAlpha = 1;
+    }
     else { P.fill(x - 1, y - 1, 2, 2, C.line); parts.push({ x, y, vx: 0, vy: 0, life: .4, color: C.soft }); }
   }
   for (const b of beams) { // w = width in pixels, a = opacity, end = flash at the impact point
     if (b.delay > 0) continue;
     ctx.globalAlpha = b.life * (b.a || 1);
-    for (let o = 0; o < (b.w || 1); o++) P.line(b.x1 + o, b.y1, b.x2 + o, b.y2, b.col);
+    if (b.zig) { // lightning: a fresh zigzag every frame, so it flickers
+      const nx = b.y1 - b.y2, ny = b.x2 - b.x1, len = Math.hypot(nx, ny) || 1;
+      let px = b.x1, py = b.y1;
+      for (let i = 1; i <= 7; i++) {
+        const f = i / 7, j = i < 7 ? (Math.random() - .5) * 12 : 0, qx = b.x1 + (b.x2 - b.x1) * f + nx / len * j, qy = b.y1 + (b.y2 - b.y1) * f + ny / len * j;
+        P.line(px, py, qx, qy, b.col); px = qx; py = qy;
+      }
+    } else for (let o = 0; o < (b.w || 1); o++) P.line(b.x1 + o, b.y1, b.x2 + o, b.y2, b.col);
     if (b.end) P.fill(b.x2 - 1, b.y2 - 1, 3, 3, C.line);
   }
   for (const q of parts) { ctx.globalAlpha = q.life; P.dot(q.x, q.y, q.color); }
@@ -803,11 +918,13 @@ function updateUI() {
   if (g) {
     const n = Math.min(g.get(), g.need);
     goal.classList.toggle('ready', n >= g.need && g.reward > 0);
-    set($('gtext'), `${g.text} ${n}/${g.need}`);
+    set($('gtext'), `${val(g.text)} ${n}/${g.need}`);
     set($('grew'), g.reward ? `${ICON}${fmt(rewardOf(g))}` : '');
   }
   tiles.forEach((b, s) => {
-    set(b, `<img src="${S.on[s] ? tileSrc[s].lit : unlocked(s) ? tileSrc[s].next : tileSrc[s].sil}" alt="">`);
+    const ts = TILE[SYS[s].id];
+    set(b, `<img src="${S.on[s] ? ts.lit : unlocked(s) ? ts.next : ts.sil}" alt="">`);
+    b.setAttribute('aria-label', SYS[s].name);
     b.classList.toggle('ok', canAct(s));
     b.classList.toggle('sel', sel === s);
     b.setAttribute('aria-expanded', sel === s);
@@ -893,11 +1010,11 @@ const t0 = tier(0), t1 = tier(1), t2 = tier(2);
 const TAL = [
   ['spark', 'Spark', 'Taps give x3 life.', HAND, 150, t0.T],
   ['seedbank', 'Seed Bank', 'Start every new world with 1,000 life (times your warp boost).', src(TI.sprout), 100, t0.M, 'spark', t0.M],
-  ['lens', 'Hot Lens', 'Laser Station and Solar Mirror output x2.', tileSrc[0].lit, 200, t0.M, 'spark', t0.M],
+  ['lens', 'Vanguard', () => `${SYS[0].name} and ${SYS[1].name} output x2.`, () => TILE[SYS[0].id].lit, 200, t0.M, 'spark', t0.M],
   ['roots', 'Deep Roots', 'All output +25%.', ENERGY, 150, t0.B, 'spark'],
   ['crit', 'Lucky Strike', '10% of taps are critical: x10 life.', src(TI.star), 42, t1.T, 'roots', t1.via],
   ['crit2', 'Jackpot', 'Critical taps happen 20% of the time.', src(TI.star), 42, t1.B, 'crit'],
-  ['swarm', 'Swarm Logic', 'Drone Hive and Comet Launcher output x2.', tileSrc[2].lit, 150, t1.T, 'roots', t1.via],
+  ['swarm', 'Backbone', () => `${SYS[2].name} and ${SYS[3].name} output x2.`, () => TILE[SYS[2].id].lit, 150, t1.T, 'roots', t1.via],
   ['thrift', 'Bulk Orders', 'Upgrades cost 10% less.', src(TI.tag), 100, t1.M, 'swarm', t1.M],
   ['patron', 'Patron', 'Goal rewards x3.', src(TI.gift), 200, t1.M, 'swarm', t1.M],
   ['bloom', 'Bloom', 'All output +50%.', ENERGY, 150, t1.B, 'swarm'],
@@ -905,13 +1022,14 @@ const TAL = [
   ['autotap2', 'Tap Swarm', 'Automatic taps 4 times a second.', src(TI.bot), 258, t1.B, 'autotap'],
   ['sleep', 'Night Shift', 'Offline earnings count up to 24h instead of 12h.', src(TI.moon), 42, t2.T, 'bloom', t2.via],
   ['dream', 'Lucid Dreams', 'Offline earnings x2.', src(TI.moon), 42, t2.B, 'sleep'],
-  ['grow', 'Greenhouse', 'Bio Seeder and Terra Core output x2.', tileSrc[4].lit, 150, t2.T, 'bloom', t2.via],
+  ['grow', 'Heavy Hitters', () => `${SYS[4].name} and ${SYS[5].name} output x2.`, () => TILE[SYS[4].id].lit, 150, t2.T, 'bloom', t2.via],
   ['cheap', 'Fast Track', 'Unlocking systems costs 25% less.', src(TI.tag), 100, t2.M, 'grow', t2.M],
   ['echo', 'Warp Echo', 'Each healed world multiplies output x2.5 instead of x2.', src(TI.rings), 200, t2.M, 'grow', t2.M],
   ['gaia', 'Gaia', 'All output x2.', src(TI.sprout), 150, t2.B, 'grow'],
   ['kinetic', 'Kinetic Grid', '+1% output per 100 lifetime taps, up to +100%.', src(TI.bolt), 258, t2.T, 'bloom', t2.via],
   ['tapecho', 'Tap Echo', 'Every tap also adds a full second of income.', HAND, 258, t2.B, 'kinetic'],
 ].map(([id, name, desc, icon, x, y, req, via]) => ({ id, name, desc, icon, x, y, req, via }));
+const val = v => (typeof v === 'function' ? v() : v); // pair talents describe the current world's systems
 const talById = Object.fromEntries(TAL.map(t => [t.id, t]));
 const canTal = t => !has(t.id) && (!t.req || has(t.req));
 
@@ -946,7 +1064,7 @@ for (const t of TAL) {
   }
   t.el = document.createElement('button');
   t.el.className = 'tn';
-  t.el.innerHTML = `<img src="${t.icon}" alt="">`;
+  t.el.innerHTML = '<img alt="">';
   Object.assign(t.el.style, { left: pctX(t.x), top: pctY(t.y) });
   t.el.addEventListener('click', () => { selTal = t.id; renderTal(); });
   tree.append(t.el);
@@ -957,13 +1075,14 @@ function renderTal() {
   for (const t of TAL) {
     const on = has(t.id);
     t.el.className = 'tn ' + (on ? 'on' : canTal(t) ? 'av' : 'lock') + (selTal === t.id ? ' sel' : '');
-    t.el.setAttribute('aria-label', `${t.name}: ${t.desc} ${on ? 'Unlocked.' : canTal(t) ? 'Available.' : 'Locked.'}`);
+    if (t.el.firstChild.getAttribute('src') !== val(t.icon)) t.el.firstChild.src = val(t.icon);
+    t.el.setAttribute('aria-label', `${t.name}: ${val(t.desc)} ${on ? 'Unlocked.' : canTal(t) ? 'Available.' : 'Locked.'}`);
     t.el.setAttribute('aria-pressed', selTal === t.id);
     if (t.line) { t.line.setAttribute('stroke', on ? C.pink : C.dim); if (on) lines.append(t.line); }
   }
   const t = talById[selTal], buy = $('tbuy');
   $('tname').textContent = t.name;
-  $('tdesc').textContent = t.desc;
+  $('tdesc').textContent = val(t.desc);
   buy.setAttribute('aria-disabled', !canTal(t) || S.seeds < 1);
   set(buy, has(t.id) ? 'Unlocked' : !canTal(t) ? `Needs<span>${talById[t.req].name}</span>` : `Unlock<span>${SEED}1</span>`);
 }
@@ -1032,10 +1151,13 @@ function warp() {
   tiles[0].focus({ preventScroll: true });
   Object.assign(S, { world: S.world + 1, life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: S.seeds + 1 });
   if (has('seedbank')) S.life = 1000 * boost();
+  const before = SYS.map(sy => sy.id);
+  setLoadout(S.world); resize(); // ground systems change size: re-fit the colony around them
+  const fresh = SYS.filter(sy => !before.includes(sy.id)).map(sy => sy.name);
   items.length = shots.length = 0;
   stage = 0; zoom = .3; flash = 1; shake = 1; // arrive from far away
   buildWorld();
-  toast(`ARRIVED AT ${world().name}. +1 Star Seed for Talents. ${world().fact}`, true);
+  toast(`ARRIVED AT ${world().name}. +1 Star Seed for Talents.${fresh.length ? ` New systems: ${fresh.join(', ')}.` : ''} ${world().fact}`, true);
 }
 $('warpbtn').addEventListener('click', () => { warp(); save(); });
 
@@ -1070,6 +1192,9 @@ function load() {
   Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: Math.min(v.goal | 0, GOALS.length), world: Math.min(v.world | 0, 60), // 2^world boost: cap keeps numbers finite
     on: v.on.map(Boolean), L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0),
     seeds: v.seeds ?? Math.min(v.world | 0, 60), tal: [...new Set(v.tal || [])] }); // saves from before talents: one seed per planet already healed
+  const was = SYS.map(sy => sy.id).join();
+  setLoadout(S.world);
+  if (W && SYS.map(sy => sy.id).join() !== was) resize(); // another tab warped meanwhile
   items.length = 0;
   if (Array.isArray(d.items)) for (const p of d.items) if (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])) items.push({ u: p[0], v: p[1], born: -9 });
   buildWorld();
@@ -1157,9 +1282,9 @@ function frame(ms) {
     fire(s, false);
     sy.next = t + cadence(s) * (.7 + Math.random() * .6);
   });
-  for (const s of shots) if ((s.t += dt) >= s.dur) { s.done = true; land(s.s, s.tx, s.ty, s.real); }
+  for (const s of shots) if ((s.t += dt) >= s.dur) { s.done = true; land(s.s, s.tx, s.ty, s.real, s.quiet); }
   shots.splice(0, shots.length, ...shots.filter(s => !s.done));
-  for (const p of pulses) { p.r += R * 1.4 * dt; p.life -= dt * 1.2; }
+  for (const p of pulses) { p.r += (p.x === undefined ? R * 1.4 : 50) * dt; p.life -= dt * 1.2; }
   for (const q of parts) { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= .95; q.vy *= .95; q.life -= dt * 1.4; }
   for (const f of floats) { f.y -= 16 * dt; f.life -= dt * 1.2; }
   for (const b of beams) if (b.delay > 0) b.delay -= dt; else b.life -= dt * (b.fade || 5);
