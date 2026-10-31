@@ -18,6 +18,12 @@
   <div class="box"><div id="life"></div><div id="rate"></div></div>
   <div class="box"><div id="wname"></div><div id="heal" role="progressbar" aria-label="Terraformed" aria-valuemin="0" aria-valuemax="100"><div id="healbar"></div></div><div id="healtxt"></div></div>
 </aside>
+<!-- before the bar so the commander stands behind it -->
+<div id="guide" hidden>
+  <img id="gface" alt="Commander Vos">
+  <div id="gbox"><button id="gbubble"><b id="gname">COMMANDER VOS</b><span id="gsay" aria-hidden="true"></span><small id="ghint"></small></button><button id="gskip">Skip</button></div>
+  <p id="gsr" class="sr" aria-live="polite"></p>
+</div>
 <nav id="bar" aria-label="Systems"></nav>
 <button id="prev" class="arrow" aria-label="Previous system" hidden>&lt;</button>
 <button id="next" class="arrow" aria-label="Next system" hidden>&gt;</button>
@@ -26,11 +32,6 @@
   <div id="prows"></div>
   <p id="pfact" class="fact"></p>
 </section>
-<div id="guide" hidden>
-  <img id="gface" alt="Commander Vos">
-  <div id="gbox"><button id="gbubble"><b id="gname">COMMANDER VOS</b><span id="gsay" aria-hidden="true"></span><small id="ghint"></small></button><button id="gskip">Skip</button></div>
-  <p id="gsr" class="sr" aria-live="polite"></p>
-</div>
 <section id="talents" role="dialog" aria-modal="true" aria-labelledby="tth" hidden>
   <header id="thead"><span id="tseeds"></span><h2 id="tth">Talents</h2><button id="tclose" aria-label="Close talents">X</button></header>
   <div id="tscroll"><button id="treset">Reset<small>refund all</small></button><div id="tree"></div></div>

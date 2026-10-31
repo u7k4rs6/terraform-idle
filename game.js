@@ -1295,7 +1295,7 @@ function updateGuide() {
   set($('ghint'), l.until ? '&gt; ' + val(l.hint) : done ? '&gt; tap to continue' : '');
   $('ghint').classList.toggle('wait', !!l.until);
   $('guide').classList.toggle('compact', sel >= 0); // panel open: hide the portrait, keep the bubble above the panel and arrows
-  $('guide').style.bottom = (sel >= 0 ? panelH + 100 : $('bar').offsetHeight + 4) + 'px';
+  $('guide').style.bottom = (sel >= 0 ? panelH + 100 : $('bar').offsetHeight - 12) + 'px'; // feet tucked behind the bar, so the talking bob never shows a gap
 }
 
 // ---------- saving & offline progress (browser localStorage: no server, per device) ----------
