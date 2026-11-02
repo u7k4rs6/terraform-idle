@@ -1,15 +1,18 @@
 {
+  "id": "./",
   "name": "Terraform",
   "short_name": "Terraform",
-  "description": "A pixel-art idle game: heal dead alien worlds with lasers, mirrors, drones, comets and antimatter.",
+  "description": "A pixel-art idle game: bring dead alien worlds back to life with lasers, mirrors, drones, comets and a captive star.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#1f2333",
   "theme_color": "#1f2333",
+  "categories": ["games", "entertainment"],
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

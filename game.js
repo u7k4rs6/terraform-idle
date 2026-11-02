@@ -1283,7 +1283,7 @@ function updateUI() {
   const boonName = BOONS.find(b => b.id === S.boon)?.name;
   $('wtrait').textContent = [trait().text, boonName && `Boon: ${boonName}`].filter(Boolean).join(' · ');
   const best = S.best[world().name], clock = n => `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}`;
-  $('wtime').textContent = S.done ? `healed · best ${clock(best)}` : clock(Math.max(0, last - S.start)) + (best !== undefined ? ` · best ${clock(best)}` : ''); // frozen once healed
+  $('wtime').textContent = S.done ? (best !== undefined ? `healed · best ${clock(best)}` : 'healed') : clock(Math.max(0, last - S.start)) + (best !== undefined ? ` · best ${clock(best)}` : ''); // frozen once healed
   const h = pct(), ns = STAGES.find(st => healOf(S.earned) < st.at); // next milestone
   $('healbar').style.width = h + '%';
   $('healtxt').textContent = `${h}% terraformed` + (ns ? ` · ${ns.name} at ${ns.at * 100}%` : '');

@@ -11,3 +11,6 @@ trailer/.cache/
 trailer/.remotion/
 itch/
 Screencast From *.mp4
+play-store/
+*.keystore
+*.jks
