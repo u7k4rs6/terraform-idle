@@ -1,3 +1,4 @@
+@font-face { font-family: 'VT323'; font-style: normal; font-weight: 400; font-display: swap; src: url(fonts/VT323-Regular.woff2) format('woff2'); } /* self-hosted (OFL, see fonts/OFL.txt): no third-party request, works offline */
 :root { --bg: #2b3047; --deep: #1f2333; --line: #e9ecf5; --dim: #59607f; --soft: #8f99c4; --pink: #e98aa3; }
 * { box-sizing: border-box; margin: 0; }
 html { font-size: 20px; }
@@ -25,6 +26,7 @@ button:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 #toast:not(.show) { display: none; }
 #toast.big { border-color: var(--pink); }
 @media (max-width: 899px) { body:has(#panel:not([hidden])) #toast { display: none; } } /* phones: the panel needs the room */
+@media (max-width: 640px) { #toast { left: 16px; max-width: none; } } /* phones: full width under the stat boxes (top set in layout()) */
 
 /* pink-bordered stat boxes down the left edge */
 #side { position: fixed; left: env(safe-area-inset-left); display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
@@ -45,6 +47,9 @@ button:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 #ttile img { width: 27px; } /* 9px icon at 3x */
 #ttile { position: absolute; top: 12px; right: calc(12px + env(safe-area-inset-right)); width: 64px; max-width: none; } /* talents: bottom-right corner, apart from the systems */
 @media (max-width: 640px) { #bar { padding-right: calc(88px + env(safe-area-inset-right)); } } /* narrow: keep the systems clear of it */
+/* embedded (itch.io): the host's fullscreen button sits bottom-right, so the talents tile moves to the bottom-left corner */
+html.embed #ttile { right: auto; left: calc(12px + env(safe-area-inset-left)); }
+@media (max-width: 640px) { html.embed #bar { padding-right: 12px; padding-left: calc(88px + env(safe-area-inset-left)); } }
 
 /* upgrade sheet + arrows to step between systems */
 #panel { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(560px, 100%); max-height: 56vh; overflow-y: auto; background: var(--deep); border-top: 2px solid var(--pink); padding-bottom: env(safe-area-inset-bottom); }
@@ -81,7 +86,7 @@ button:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 @keyframes talk { 50% { transform: translateY(-2px); } }
 #gbox { position: relative; align-self: center; pointer-events: auto; }
 #guide.compact #gbox { margin-left: 8px; }
-#gbubble { position: relative; display: block; width: min(340px, calc(100vw - 180px)); min-height: 84px; padding: 8px 12px; background: var(--deep); border: 2px solid var(--line); text-align: left; font-size: .95rem; }
+#gbubble { position: relative; display: block; width: min(340px, calc(100vw - 200px)); /* 200 = left offset + portrait + gap on phones */ min-height: 84px; padding: 8px 12px; background: var(--deep); border: 2px solid var(--line); text-align: left; font-size: .95rem; }
 #gbubble::before { content: ""; position: absolute; left: -8px; top: 22px; width: 6px; height: 6px; background: var(--line); box-shadow: -4px 4px 0 var(--line); } /* pixel tail toward the commander */
 #gname { display: block; font-weight: normal; font-size: .8rem; color: var(--pink); }
 #ghint { display: block; margin-top: 6px; text-align: right; font-size: .8rem; color: var(--soft); }

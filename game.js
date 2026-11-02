@@ -503,14 +503,20 @@ function resize() {
 // Planet sits low behind the ground line; the systems stand and hang around it.
 function layout() {
   const top = $('top').getBoundingClientRect().bottom / PX, bar = $('bar').offsetHeight / PX;
-  $('side').style.top = $('toast').style.top = top * PX + 12 + 'px';
+  $('side').style.top = top * PX + 12 + 'px';
   const sr = $('side').getBoundingClientRect();
+  $('toast').style.top = (innerWidth < 640 ? sr.bottom + 10 : top * PX + 12) + 'px'; // phones: under the stat boxes, full width
   TOP = top + 4; SIDE = { r: sr.right / PX, b: sr.bottom / PX };
   GY = Math.round(H - bar - 14); // ground line
   // planet as big as fits: the outer ground systems (GX, wider than the ring's cos 30° x ORBIT) plus a sprite half-width across,
-  // the top system (ORBIT + sprite + label) above a centre that sits .45R over the ground
-  R0 = Math.max(10, Math.min(W * .42, (W / 2 - 19) / GX, (GY - TOP - 28) / (ORBIT + .45)));
-  CX = Math.round(W / 2); CY = Math.round(GY - R0 * .45);
+  // the top system (ORBIT + sprite + label) above a centre that sits .45R over the ground.
+  // Portrait screens are width-bound: the ground systems move in to the planet's edge (x = 1R, clear of its visible rim)
+  // and the planet rises out of the ground a little, so the tall sky is not left empty.
+  const portrait = H > W * 1.2, gx = portrait ? 1 : GX, fit = (GY - TOP - 28) / (ORBIT + .45);
+  R0 = Math.max(10, Math.min(W * .42, (W / 2 - 19) / gx, fit));
+  const lift = portrait ? Math.min(.35 * R0, (fit - R0) * (ORBIT + .45) * .5) : 0;
+  for (const sl of SLOT) if (sl.ground) sl.x = Math.sign(sl.x) * gx;
+  CX = Math.round(W / 2); CY = Math.round(GY - R0 * .45 - lift);
   FY = Math.max(1, Math.min(1.15, (CY - TOP - 30) / (ORBIT * R0))); // tall screens: a slight upward stretch, still hugging the planet
   // low background colony: a mix of building types, leaving open ground around the ground systems.
   // It grows outward from the core as the planet heals (see drawColony), so `city` is sorted by distance from the centre.
@@ -1584,3 +1590,5 @@ resize();
 requestAnimationFrame(frame);
 document.fonts?.ready.then(resize); // the HUD font changes box heights once it arrives
 if (!S.intro) guide(INTRO, true); // new players meet the commander
+if (self !== top) document.documentElement.classList.add('embed'); // itch.io and other iframes: see html.embed in style.css
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => { /* offline play is optional */ });
