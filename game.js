@@ -25,7 +25,7 @@ const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 
 // seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done;
 // done: this world is at 100% (the warp is waiting); best: fastest time to heal each world, by name
 // ach: achievement ids earned; n: lifetime counters the achievements watch (crits, comets caught, taps in meteor showers, longest time away in s)
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0 } };
+const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0 }, daily: '' }; // daily: local date of the last supply drop opened
 console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
 const has = id => S.tal.includes(id);
 const boost = () => (has('echo') ? 2.5 : 2) ** S.world; // every world you finish multiplies all output for good
@@ -851,6 +851,7 @@ function draw(t, heal) {
     } else for (let o = 0; o < (b.w || 1); o++) P.line(b.x1 + o, b.y1, b.x2 + o, b.y2, b.col);
     if (b.end) P.fill(b.x2 - 1, b.y2 - 1, 3, 3, C.line);
   }
+  drawCrate(t);
   for (const m of meteors) { P.line(m.x - m.vx * .08, m.y - m.vy * .08, m.x, m.y, C.sun); P.dot(m.x, m.y, C.line); } // streaks
   if (comet) { // gold head with a long fading tail; the pulsing ring says "tap me"
     for (let k = 1; k < 22; k++) { ctx.globalAlpha = 1 - k / 22; for (const dy of [0, 1]) P.dot(comet.x - k * 2, comet.y + dy + (k > 8 ? Math.round(Math.sin(k * .7 + t * 8)) : 0), k < 8 ? C.sun : C.soft); }
@@ -955,6 +956,8 @@ const SFX = {
   gas: k => hiss({ dur: .7, vol: .05 * k, freq: 700, f2: 300 }),
   annihilate: k => { tone({ f: 70, f2: 28, dur: .9, vol: .2 * k, type: 'sine' }); hiss({ dur: .5, vol: .08 * k, freq: 3000, f2: 150 }); },
 };
+// Haptics: a short buzz on phones that support it, tied to the sound-effects toggle (no-op elsewhere).
+const buzz = ms => { if (pref.sfx) try { navigator.vibrate?.(ms); } catch { /* not allowed here (iframe, desktop) */ } };
 const lastPlay = {};
 function play(name, k = 1) {
   if (!AC || AC.state !== 'running' || !pref.sfx || !SFX[name]) return;
@@ -1005,6 +1008,7 @@ const ACH = [
   ['night', 'Night Owl', 'Come back to an hour or more of offline earnings.', () => S.n.away >= 3600],
   ['rich', 'Millionaire', 'Hold a million life at once.', () => S.life >= 1e6],
   ['combo', 'Combo Master', 'Chain 25 taps in a row.', () => S.n.combo >= 25],
+  ['crate', 'Supply Run', 'Open a daily supply drop.', () => S.n.crates > 0],
 ].map(([id, name, desc, test]) => ({ id, name, desc, test }));
 function checkAch() { // 10x a second from updateUI; each test is a few comparisons
   for (const a of ACH) if (!S.ach.includes(a.id) && a.test()) { S.ach.push(a.id); toast(`ACHIEVEMENT: ${a.name}. ${a.desc}`, true); play('talent'); }
@@ -1577,7 +1581,7 @@ function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
-      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n },
+      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n, daily: S.daily },
       items: items.slice(-150).map(it => [Math.round(it.u), Math.round(it.v)]),
     }));
   } catch { /* private mode or full storage: keep playing unsaved */ }
@@ -1595,7 +1599,8 @@ const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
   && optional(d.S.tal, v => Array.isArray(v) && v.every(id => TAL.some(t => t.id === id)))
   && optional(d.S.best, v => !!v && typeof v === 'object' && Object.entries(v).every(([k, s]) => WORLDS.some(w => w.name === k) && Number.isInteger(s) && s >= 0))
   && optional(d.S.ach, v => Array.isArray(v) && v.every(id => ACH.some(a => a.id === id)))
-  && optional(d.S.n, v => !!v && typeof v === 'object' && Object.values(v).every(x => Number.isFinite(x) && x >= 0));
+  && optional(d.S.n, v => !!v && typeof v === 'object' && Object.values(v).every(x => Number.isFinite(x) && x >= 0))
+  && optional(d.S.daily, v => v === '' || typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v));
 console.assert(!validSave({ t: 1, S: { life: 0, earned: 0, taps: 0, goal: 0, world: 0, on: [false, true, false, false, false, false], L: SYS.map(() => [0, 0, 0]) } }), 'save: out-of-order unlock');
 console.assert(validSave({ t: 1, S: { life: 5, earned: 5, taps: 1, goal: 0, world: 0, on: [true, false, false, false, false, false], L: [[1, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]] } }), 'save: minimal old save');
 // Restores the save and credits the time since it was written. Returns false if there was nothing usable.
@@ -1609,7 +1614,7 @@ function load() {
   const v = d.S, prev = S.world;
   Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world,
     on: v.on, L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0), done: v.done ?? false, best: v.best ?? {},
-    ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, ...(v.n || {}) },
+    ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, ...(v.n || {}) }, daily: v.daily ?? '',
     seeds: v.seeds ?? v.world, tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
   const was = SYS.map(sy => sy.id).join();
   setLoadout(S.world);
@@ -1647,6 +1652,7 @@ cv.addEventListener('pointerdown', e => {
   if (!W || !e.isPrimary || e.button > 0) return; // not laid out yet; right/middle click and extra fingers are not taps
   const [ox, oy] = camOrigin(), x = (e.clientX / PX - ox) / cam.z, y = (e.clientY / PX - oy) / cam.z;
   if (comet && Math.hypot(x - comet.x, y - comet.y) <= HIT) return catchComet();
+  if (crate) { const [cx, cy] = cratePos(last); if (Math.abs(x - cx) <= 16 && y >= cy - 30 && y <= cy + 12) return openCrate(); } // crate or its parachute (a box, so it doesn't steal taps from the systems nearby)
   let hit = -1, best = Infinity; // anywhere on a sprite (plus a finger's margin) counts; the nearest centre wins
   SYS.forEach((_, s) => {
     const [sx, sy] = sysPos(s, last), img = look(s).lit, d = Math.hypot(x - sx, y - sy);
@@ -1720,6 +1726,39 @@ function stepEvents(dt) {
   if (comet) comet.x += comet.vx * dt;
 }
 
+// ---------- daily supply drop: once per calendar day a crate parachutes into the sky and waits to be tapped ----------
+const today = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
+let crate = null, crateWait = 8; // crate: { side: -1 | 1, k: 0..1 descent }; first drop comes a few seconds into a session
+const cratePos = t => { // beside the planet's top, clear of the orbit systems; floats down, then bobs
+  const ty = Math.max(TOP + 34, CY - R0 * 1.05), e = 1 - (1 - crate.k) ** 3;
+  return [Math.round(CX + crate.side * R0 * .75), Math.round(-12 + (ty + 12) * e + (crate.k >= 1 && !calm() ? Math.sin(t * 2) * 2 : 0))];
+};
+function stepCrate(dt) {
+  if (crate) { crate.k = Math.min(1, crate.k + dt / 3); return; }
+  if (S.daily === today() || !S.intro || !S.on[0] || $('c').inert || (crateWait -= dt) > 0) return;
+  crate = { side: Math.random() < .5 ? -1 : 1, k: 0 };
+  toast('SUPPLY DROP incoming. Tap the crate to open it.', true); play('ui');
+}
+function openCrate() {
+  const [x, y] = cratePos(last), g = Math.max(500, rateOf() * 600), seed = Math.random() < .1;
+  S.life += g; S.earned += g; S.daily = today(); S.n.crates++; crate = null;
+  if (seed) S.seeds++;
+  burst(x, y, [C.sun, C.line, C.pink], 50, 70); play('coin'); buzz(30); shake = .4;
+  floats.push({ x, y: y - 10, text: '+' + fmt(g), life: 1.8, col: C.sun });
+  toast(`Supply drop: ${fmt(g)} life${seed ? ' and a Star Seed!' : '.'} Next one tomorrow.`, true);
+  quip(QUIPS.crate, true); save();
+}
+const CRATE = tiny(['wwwwwwwww', 'wnnnpnnnw', 'wnnnpnnnw', 'wpppppppw', 'wnnnpnnnw', 'wnnnpnnnw', 'wwwwwwwww']);
+function drawCrate(t) {
+  if (!crate) return;
+  const [x, y] = cratePos(t);
+  for (let r = 13; r > 0; r--) P.ring(x, y - 18, r, r * .6, Math.PI, 2 * Math.PI, r > 11 ? C.line : r % 4 < 2 ? C.pink : C.bg); // striped canopy
+  P.fill(x - 13, y - 18, 27, 1, C.line);
+  for (const dx of [-12, 0, 12]) P.line(x + dx, y - 18, x + Math.sign(dx) * 6, y - 7, C.soft); // lines
+  ctx.drawImage(CRATE, x - 9, y - 7, 18, 14); // the crate at 2x
+  if (crate.k >= 1 && (calm() || Math.sin(t * 5) > 0)) P.fill(x + 11, y - 10, 3, 3, C.pink); // tap me
+}
+
 // ---------- loop ----------
 let uiTick = 0, resume = true, panelH = 0, autoT = 0, paidAt = 0; // resume: skip one income gap after a hidden tab (away() already paid it)
 let errors = 0;
@@ -1746,7 +1785,7 @@ function step(ms) {
 
   const reached = STAGES.filter(s => heal >= s.at).length;
   if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); shake = .8; play('milestone'); if (stage === 2) quip(QUIPS.half); }
-  stepEvents(dt); stepLife(dt, heal);
+  stepEvents(dt); stepLife(dt, heal); stepCrate(dt);
   zoom += (1 - zoom) * Math.min(1, dt * 1.5);
   R = Math.round(R0 * zoom);
 
