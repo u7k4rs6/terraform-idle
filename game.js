@@ -919,7 +919,7 @@ const pref = { sfx: true, music: true, calm: null, big: false }; // calm null = 
 try { Object.assign(pref, JSON.parse(localStorage.getItem(PREF)) || {}); } catch { /* storage blocked: defaults */ }
 const savePref = () => { try { localStorage.setItem(PREF, JSON.stringify(pref)); } catch { /* not remembered */ } };
 const calm = () => pref.calm ?? matchMedia('(prefers-reduced-motion: reduce)').matches;
-let AC, sfxBus, musicBus, noiseBuf;
+let AC, sfxBus, musicBus, noiseBuf, warm, echoIn; // warm: the music's brightness filter; echoIn: its echo send
 function audioOn() {
   if (AC) { if (AC.state === 'suspended' && !document.hidden) AC.resume(); return; }
   const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -928,8 +928,11 @@ function audioOn() {
   const comp = AC.createDynamicsCompressor(); // keeps stacked shots from clipping
   comp.connect(AC.destination);
   sfxBus = AC.createGain(); sfxBus.connect(comp);
-  const warm = AC.createBiquadFilter(); warm.type = 'lowpass'; warm.frequency.value = 5000; // soft top end that still lets the hi-hats through warm.connect(comp);
+  warm = AC.createBiquadFilter(); warm.type = 'lowpass'; warm.frequency.value = 4000; warm.connect(comp); // each song sets its own brightness
   musicBus = AC.createGain(); musicBus.connect(warm);
+  echoIn = AC.createDelay(1); echoIn.delayTime.value = .33; // echo on chosen notes, fed back into the music bus so the music switch mutes it too
+  const fb = AC.createGain(), wet = AC.createGain(); fb.gain.value = .4; wet.gain.value = .55;
+  echoIn.connect(fb).connect(echoIn); echoIn.connect(wet).connect(musicBus);
   setBuses();
   noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
   const nd = noiseBuf.getChannelData(0);
@@ -940,15 +943,16 @@ addEventListener('pointerdown', audioOn); addEventListener('keydown', audioOn);
 document.addEventListener('visibilitychange', () => { if (AC) document.hidden ? AC.suspend() : AC.resume(); }); // silent in background tabs
 const setBuses = () => { if (!AC) return; sfxBus.gain.value = pref.sfx ? .8 : 0; musicBus.gain.value = pref.music ? .5 : 0; };
 // One oscillator note: f (Hz) sliding to f2, envelope attack -> vol -> (hold) -> release. t: absolute start time.
-function tone({ f, f2, type = 'square', dur = .1, vol = .1, at = 0, t, attack = .005, release, bus = sfxBus }) {
+function tone({ f, f2, type = 'square', dur = .1, vol = .1, at = 0, t, attack = .005, release, bus = sfxBus, detune = 0, echo = false }) {
   t ??= AC.currentTime + at;
   const o = AC.createOscillator(), g = AC.createGain();
-  o.type = type; o.frequency.setValueAtTime(f, t);
+  o.type = type; o.frequency.setValueAtTime(f, t); o.detune.value = detune;
   if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
   g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack);
   if (release) g.gain.setValueAtTime(vol, t + dur - release);
   g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-  o.connect(g).connect(bus); o.start(t); o.stop(t + dur + .05);
+  o.connect(g).connect(bus); if (echo) g.connect(echoIn);
+  o.start(t); o.stop(t + dur + .05);
 }
 // Filtered noise burst (whooshes, crackles, booms); freq slides to f2.
 function hiss({ dur = .2, vol = .1, at = 0, t, freq = 1000, f2, kind = 'lowpass', q = 1, bus = sfxBus }) {
@@ -998,43 +1002,50 @@ function play(name, k = 1) {
   SFX[name](k);
 }
 
-// Background music: each world's own song (WORLDS[].music: tempo, key, mode, two 4-bar progressions, arpeggio, lead, groove) on a
-// 16th-note grid, scheduled a little ahead of the clock. It grows as the planet heals: pads, bass and arpeggio from the start,
-// the melody at 25%, drums at 50%, sparkles more often towards 100%.
+// Background music: every world plays its own style (WORLDS[].music): tempo, metre, swing, brightness, chords, and the
+// instruments and patterns that carry it. A song is 8 bars (sections A and B) on a 16th-note grid, scheduled a little ahead of
+// the clock. It grows as the planet heals: each world's signature plays from the start, the melody and the rest join later.
 const MODES = { minor: [0, 2, 3, 5, 7, 8, 10], harmonic: [0, 2, 3, 5, 7, 8, 11], dorian: [0, 2, 3, 5, 7, 9, 10], phrygian: [0, 1, 3, 5, 7, 8, 10],
   lydian: [0, 2, 4, 6, 7, 9, 11], major: [0, 2, 4, 5, 7, 9, 11], mixolydian: [0, 2, 4, 5, 7, 9, 10] };
-const ARPS = [[0, 1, 2, 1, 0, 2, 1, 2], [0, 2, 4, 2, 1, 3, 4, 3], [0, 0, 2, 1, 0, 0, 3, 2], [0, -1, 2, -1, 4, -1, 2, -1]]; // chord tones per 8th; -1 rests
-const GROOVES = ['k...h...k...h...', 'k.h.s.h.k.h.s.h.', 'k.h...h.s.h...h.']; // per 16th: kick, snare, hat
-const song = () => world().music, STEP = () => 60 / song().bpm / 4, mtof = m => 440 * 2 ** ((m - 69) / 12);
+const song = () => world().music, barSteps = () => (song().meter || 4) * 4, STEP = () => 60 / song().bpm / 4, mtof = m => 440 * 2 ** ((m - 69) / 12);
 const deg = (m, d) => 57 + key + m[(d % 7 + 7) % 7] + 12 * Math.floor(d / 7); // scale degree d of mode m, from A3 + key
+const loud = w => w === 'square' || w === 'sawtooth'; // buzzy waves sound louder: play them softer
 let mStep = 0, mNext = 0, key = 0;
 function startMusic() {
   mNext = AC.currentTime + .2;
   setInterval(() => {
     if (AC.state !== 'running' || !pref.music) return; // muted: schedule nothing
     if (mNext < AC.currentTime) mNext = AC.currentTime + .05; // resumed after a pause or unmuted: don't play the backlog
-    while (mNext < AC.currentTime + .35) { musicStep(mStep, mNext); mStep = (mStep + 1) % 128; mNext += STEP(); } // 8 bars: A then B
+    while (mNext < AC.currentTime + .35) { musicStep(mStep, mNext); mStep = (mStep + 1) % (8 * barSteps()); mNext += STEP(); }
   }, 100);
 }
-// The melody: 8 notes per bar (scale steps above the chord root, -1 rests), different for every world, a third higher in section B.
+// The melody: a note every 8th (scale steps above the chord root, -1 rests), different for every world, a third higher in section B.
 const motif = w => Array.from({ length: 8 }, (_, i) => (hash(i, w, 71) < .3 && i ? -1 : [0, 1, 2, 4, 5, 7][hash(i, w, 72) * 6 | 0]));
 console.assert(deg(MODES.minor, 0) === 57 && deg(MODES.minor, 7) === 69 && deg(MODES.minor, -1) === 55, 'music: scale degrees');
+console.assert(WORLDS.every(({ music: so }) => [so.bass, ...Object.values(so.drums || {})].every(p => p.length === (so.meter || 4) * 4)), 'music: every pattern fills one bar');
 function musicStep(s, t) {
-  const so = song(), m = MODES[so.mode], beat = s & 15, bar = s >> 4, B = bar >> 2, len = STEP(), o = { t, bus: musicBus }, heal = healOf(S.earned);
-  if (s === 0) key = so.key; // a new key starts with the song
-  const root = so.prog[B][bar & 3], ch = [0, 2, 4, 7, 9].map(i => deg(m, root + i)); // root, 3rd, 5th, octave, 10th
-  if (beat === 0) ch.slice(0, 3).forEach(n => tone({ ...o, f: mtof(n), type: 'triangle', dur: len * 16, vol: .03, attack: .6, release: 1 })); // pad
-  if (beat % 8 === 0) tone({ ...o, f: mtof(ch[0] - 24), type: 'triangle', dur: len * 7, vol: .11, attack: .01, release: .4 }); // bass
-  const a = ARPS[so.arp][beat >> 1];
-  if (beat % 2 === 0 && a >= 0) tone({ ...o, f: mtof(ch[a] + 12), type: 'square', dur: len * 1.8, vol: .016 }); // arpeggio
+  const so = song(), m = MODES[so.mode], bs = barSteps(), beat = s % bs, bar = s / bs | 0, B = bar >> 2 & 1, len = STEP(), heal = healOf(S.earned);
+  if (s === 0) { key = so.key; warm.frequency.setTargetAtTime(so.bright, t, .4); } // a new song: its key and brightness
+  if (so.swing && beat % 4 === 2) t += so.swing * 2 * len; // swing: the off-beat 8th comes late
+  const o = { t, bus: musicBus }, root = so.prog[B][bar & 3], ch = [0, 2, 4, 7, 9].map(i => deg(m, root + i)); // root, 3rd, 5th, octave, 10th
+  if (so.pad && beat === 0) for (const n of ch.slice(0, 3)) for (const dt of so.chorus ? [-9, 9] : [0]) // pad (detuned pairs: a chorus)
+    tone({ ...o, f: mtof(n), type: so.pad, dur: len * bs, vol: (loud(so.pad) ? .012 : .028) / (so.chorus ? 1.6 : 1), attack: .5, release: .8, detune: dt, echo: so.echo });
+  const b = so.bass[beat];
+  if (b !== '.') { // bass: x root, o octave, 5 fifth; a note lasts until the next one
+    const next = so.bass.slice(beat + 1).search(/[^.]/), span = next < 0 ? bs - beat : next + 1;
+    tone({ ...o, f: mtof((b === '5' ? ch[2] : ch[0]) - 24 + (b === 'o' ? 12 : 0)), type: so.bassWave, dur: len * span * .9, vol: loud(so.bassWave) ? .05 : .11, release: .05 });
+  }
+  const A = so.arp;
+  if (A && beat % A.rate === 0) { const i = A.pat[beat / A.rate % A.pat.length]; if (i >= 0) tone({ ...o, f: mtof(ch[i] + 12 * A.oct), type: A.wave, dur: len * A.len, vol: loud(A.wave) ? .014 : .03, echo: A.echo }); }
   const n = motif(S.world % WORLDS.length)[beat >> 1];
-  if (heal >= .25 && beat % 2 === 0 && n >= 0 && !(bar & 1 && beat >= 8)) // melody, answering itself: odd bars play only their first half
-    tone({ ...o, f: mtof(deg(m, root + n + 7 + 2 * B)), type: so.lead, dur: len * 1.7, vol: so.lead === 'sawtooth' || so.lead === 'square' ? .014 : .028, attack: .01 });
-  const d = GROOVES[so.drums][beat];
-  if (heal >= .5 && d === 'k') tone({ ...o, f: 120, f2: 40, type: 'sine', dur: .2, vol: .14 });
-  if (heal >= .5 && d === 's') hiss({ ...o, dur: .14, vol: .05, freq: 1800, kind: 'bandpass', q: .8 });
-  if (heal >= .5 && d === 'h') hiss({ ...o, dur: .04, vol: .03, freq: 3500, kind: 'highpass' });
-  if (beat === 10 && Math.random() < .25 + .45 * heal) tone({ ...o, f: mtof(deg(m, root + [7, 9, 11, 14][Math.random() * 4 | 0]) + 12), type: 'sine', dur: len * 10, vol: .028, attack: .05, release: .8 }); // sparkle
+  if (heal >= so.leadAt && beat % 2 === 0 && n >= 0 && !(bar & 1 && beat >= bs / 2)) // melody, answering itself: odd bars play only their first half
+    tone({ ...o, f: mtof(deg(m, root + n + 7 + 2 * B)), type: so.lead, dur: len * 1.7, vol: loud(so.lead) ? .014 : .028, echo: so.echo });
+  if (so.drums && heal >= so.drumsAt) {
+    if (so.drums.k?.[beat] === 'x') tone({ ...o, f: 120, f2: 40, type: 'sine', dur: .2, vol: .15 });
+    if (so.drums.s?.[beat] === 'x') hiss({ ...o, dur: .14, vol: .05, freq: 1800, kind: 'bandpass', q: .8 });
+    if (so.drums.h?.[beat] === 'x') hiss({ ...o, dur: .04, vol: .03, freq: 3500, kind: 'highpass' });
+  }
+  if (beat === 10 % bs && Math.random() < .15 + .45 * heal) tone({ ...o, f: mtof(deg(m, root + [7, 9, 11, 14][Math.random() * 4 | 0]) + 12), type: 'sine', dur: len * 10, vol: .024, attack: .05, release: .8, echo: true }); // sparkle
 }
 
 // ---------- achievements: lifetime trophies, listed in the settings sheet ----------
