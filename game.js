@@ -160,17 +160,18 @@ function grit(src, seed, light) {
   const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 0;
   const [lineL, lineM, lineD] = C.art.line.map(rgb), [detA, detB] = C.art.det.map(rgb), [fillL, fillM, fillD, fillX] = C.art.fill.map(rgb);
   const T = { lineL, lineM, lineD, detA, detB, fillL, fillM, fillD, fillX, pinkL: rgb(C.accL), pinkD: rgb(C.accD) };
+  const same = (c, i) => d[i] === c[0] && d[i + 1] === c[1] && d[i + 2] === c[2], LINE = rgb(C.line), DIM = rgb(C.dim), ACC = rgb(MK); // the art's four inks: exact colours
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = (y * w + x) * 4;
     if (!d[i + 3]) continue;
-    const r = d[i], gg = d[i + 1], b = d[i + 2], n = hash(x, y, seed), th = B4[y & 3][x & 3] / 16, L = light(x, y, w, h);
+    const n = hash(x, y, seed), th = B4[y & 3][x & 3] / 16, L = light(x, y, w, h);
     const v = L + (n - .5) * .5; // light with per-pixel noise
     const blot = hash(x >> 2, y >> 2, seed + 1) * .55 + hash(x >> 1, y >> 1, seed + 2) * .3; // low-frequency mottling, like the planet
     const f = L * .75 + blot - .45 + (n - .5) * .25;
-    const col = r > 200 && gg < 170 ? (v > th ? T.pinkL : T.pinkD) // accents
-      : r + gg + b > 600 ? (!on(x + 1, y) || !on(x, y + 1) ? (v > .75 ? T.lineM : T.lineD) // lit edges: bright toward the sun, dim on the shadow side
+    const col = same(ACC, i) ? (v > th ? T.pinkL : T.pinkD) // accents
+      : same(LINE, i) ? (!on(x + 1, y) || !on(x, y + 1) ? (v > .75 ? T.lineM : T.lineD) // lit edges: bright toward the sun, dim on the shadow side
         : v > th + .15 ? T.lineL : v > th - .3 ? T.lineM : T.lineD)
-      : b > 110 && r + gg + b > 280 ? (n < .5 ? T.detA : T.detB) // dim detail lines
+      : same(DIM, i) ? (n < .5 ? T.detA : T.detB) // dim detail lines
       : f > th + .3 ? T.fillL : f > th - .1 ? T.fillM : f > th - .45 ? T.fillD : T.fillX; // mottled, dithered fill
     d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2];
   }
@@ -1413,43 +1414,51 @@ const TI = { // 9x9 talent icons (w = line, n = fill, p = accent)
   bolt: tiny(['.....ww..', '....ww...', '...ww....', '..wwwww..', '....ww...', '...ww....', '..ww.....', '.ww......', '.........']),
 };
 const src = c => c.toDataURL(), HAND = src(T.hand), ENERGY = src(T.energy), SEED = `<img class="ico" src="${src(TI.sprout)}" alt="Star Seeds">`;
-// Grid is 300 x 420: roots growing down from Spark; each talent links straight to the one it needs.
+// Grid is 300 x 420. Each tier r: a diamond in the middle (top, left, right, bottom) and a two-node branch on each side.
+// via: the y where the connector from the parent turns sideways.
+const tier = r => { const b = 140 * r; return { T: b + 25, M: b + 62, B: b + 100, via: b - 8 }; };
+const t0 = tier(0), t1 = tier(1), t2 = tier(2);
 const TAL = [
-  ['spark', 'Spark', 'Taps give x3 life.', HAND, 150, 28],
-  ['seedbank', 'Seed Bank', 'Start every new world with 1,000 life (times your warp boost).', src(TI.sprout), 72, 68, 'spark'],
-  ['lens', 'Vanguard', () => `${SYS[0].name} and ${SYS[1].name} output x2.`, () => TILE[SYS[0].id].lit, 228, 68, 'spark'],
-  ['roots', 'Deep Roots', 'All output +25%.', ENERGY, 150, 100, 'spark'],
-  ['crit', 'Lucky Strike', '10% of taps are critical: x10 life.', src(TI.star), 52, 150, 'roots'],
-  ['crit2', 'Jackpot', 'Critical taps happen 20% of the time.', src(TI.star), 30, 218, 'crit'],
-  ['swarm', 'Backbone', () => `${SYS[2].name} and ${SYS[3].name} output x2.`, () => TILE[SYS[2].id].lit, 150, 172, 'roots'],
-  ['thrift', 'Bulk Orders', 'Upgrades cost 10% less.', src(TI.tag), 98, 226, 'swarm'],
-  ['patron', 'Patron', 'Goal rewards x3.', src(TI.gift), 202, 226, 'swarm'],
-  ['bloom', 'Bloom', 'All output +30%.', ENERGY, 150, 250, 'swarm'],
-  ['autotap', 'Tap Bot', 'Taps the planet for you once a second.', src(TI.bot), 248, 150, 'roots'],
-  ['autotap2', 'Tap Swarm', 'Automatic taps 4 times a second.', src(TI.bot), 270, 218, 'autotap'],
-  ['sleep', 'Night Shift', 'Offline earnings count up to 24h instead of 12h.', src(TI.moon), 62, 300, 'bloom'],
-  ['dream', 'Lucid Dreams', 'Offline earnings x2.', src(TI.moon), 34, 372, 'sleep'],
-  ['grow', 'Heavy Hitters', () => `${SYS[4].name} and ${SYS[5].name} output x2.`, () => TILE[SYS[4].id].lit, 150, 318, 'bloom'],
-  ['cheap', 'Fast Track', 'Unlocking systems costs 25% less.', src(TI.tag), 100, 380, 'grow'],
-  ['echo', 'Warp Echo', 'All output +5% for every world healed, up to +50%.', src(TI.rings), 200, 380, 'grow'],
-  ['gaia', 'Gaia', 'All output +50%.', src(TI.sprout), 150, 398, 'grow'],
-  ['kinetic', 'Kinetic Grid', '+1% output per 100 lifetime taps, up to +100%.', src(TI.bolt), 238, 300, 'bloom'],
-  ['tapecho', 'Tap Echo', 'Taps are worth 50% more.', HAND, 266, 372, 'kinetic'],
-].map(([id, name, desc, icon, x, y, req]) => ({ id, name, desc, icon, x, y, req }));
+  ['spark', 'Spark', 'Taps give x3 life.', HAND, 150, t0.T],
+  ['seedbank', 'Seed Bank', 'Start every new world with 1,000 life (times your warp boost).', src(TI.sprout), 100, t0.M, 'spark', t0.M],
+  ['lens', 'Vanguard', () => `${SYS[0].name} and ${SYS[1].name} output x2.`, () => TILE[SYS[0].id].lit, 200, t0.M, 'spark', t0.M],
+  ['roots', 'Deep Roots', 'All output +25%.', ENERGY, 150, t0.B, 'spark'],
+  ['crit', 'Lucky Strike', '10% of taps are critical: x10 life.', src(TI.star), 42, t1.T, 'roots', t1.via],
+  ['crit2', 'Jackpot', 'Critical taps happen 20% of the time.', src(TI.star), 42, t1.B, 'crit'],
+  ['swarm', 'Backbone', () => `${SYS[2].name} and ${SYS[3].name} output x2.`, () => TILE[SYS[2].id].lit, 150, t1.T, 'roots', t1.via],
+  ['thrift', 'Bulk Orders', 'Upgrades cost 10% less.', src(TI.tag), 100, t1.M, 'swarm', t1.M],
+  ['patron', 'Patron', 'Goal rewards x3.', src(TI.gift), 200, t1.M, 'swarm', t1.M],
+  ['bloom', 'Bloom', 'All output +30%.', ENERGY, 150, t1.B, 'swarm'],
+  ['autotap', 'Tap Bot', 'Taps the planet for you once a second.', src(TI.bot), 258, t1.T, 'roots', t1.via],
+  ['autotap2', 'Tap Swarm', 'Automatic taps 4 times a second.', src(TI.bot), 258, t1.B, 'autotap'],
+  ['sleep', 'Night Shift', 'Offline earnings count up to 24h instead of 12h.', src(TI.moon), 42, t2.T, 'bloom', t2.via],
+  ['dream', 'Lucid Dreams', 'Offline earnings x2.', src(TI.moon), 42, t2.B, 'sleep'],
+  ['grow', 'Heavy Hitters', () => `${SYS[4].name} and ${SYS[5].name} output x2.`, () => TILE[SYS[4].id].lit, 150, t2.T, 'bloom', t2.via],
+  ['cheap', 'Fast Track', 'Unlocking systems costs 25% less.', src(TI.tag), 100, t2.M, 'grow', t2.M],
+  ['echo', 'Warp Echo', 'All output +5% for every world healed, up to +50%.', src(TI.rings), 200, t2.M, 'grow', t2.M],
+  ['gaia', 'Gaia', 'All output +50%.', src(TI.sprout), 150, t2.B, 'grow'],
+  ['kinetic', 'Kinetic Grid', '+1% output per 100 lifetime taps, up to +100%.', src(TI.bolt), 258, t2.T, 'bloom', t2.via],
+  ['tapecho', 'Tap Echo', 'Taps are worth 50% more.', HAND, 258, t2.B, 'kinetic'],
+].map(([id, name, desc, icon, x, y, req, via]) => ({ id, name, desc, icon, x, y, req, via }));
 const val = v => (typeof v === 'function' ? v() : v); // pair talents describe the current world's systems
 const talById = Object.fromEntries(TAL.map(t => [t.id, t]));
 const canTal = t => !has(t.id) && (!t.req || has(t.req));
 
 const tree = $('tree'), SVGNS = 'http://www.w3.org/2000/svg', pctX = x => x / 3 + '%', pctY = y => y / 4.2 + '%';
+for (const t of [t0, t1, t2]) { // a cut-corner card behind each tier
+  const card = Object.assign(document.createElement('div'), { className: 'tier' });
+  Object.assign(card.style, { top: pctY(t.T - 22), height: pctY(t.B - t.T + 44) });
+  tree.append(card);
+}
 const lines = document.createElementNS(SVGNS, 'svg');
-lines.setAttribute('viewBox', '0 0 300 420'); lines.setAttribute('preserveAspectRatio', 'none');
+lines.setAttribute('viewBox', '0 0 300 420'); lines.setAttribute('preserveAspectRatio', 'none'); lines.setAttribute('shape-rendering', 'crispEdges');
 tree.append(lines);
 let selTal = 'spark';
 for (const t of TAL) {
-  if (t.req) { // a straight root from the parent
-    const pr = talById[t.req];
+  if (t.req) { // square connector: down from the parent, across at `via`, down into the child
+    const pr = talById[t.req], via = t.via ?? t.y;
     t.line = document.createElementNS(SVGNS, 'polyline');
-    t.line.setAttribute('points', `${pr.x},${pr.y} ${t.x},${t.y}`);
+    t.line.setAttribute('points', `${pr.x},${pr.y} ${pr.x},${via} ${t.x},${via} ${t.x},${t.y}`);
     t.line.setAttribute('fill', 'none'); t.line.setAttribute('stroke-width', '3');
     lines.append(t.line);
   }

@@ -113,8 +113,10 @@ html.embed #ttile { right: auto; left: calc(12px + env(safe-area-inset-left)); }
 #tscroll { position: relative; flex: 1; overflow-y: auto; padding: 8px 16px 24px; }
 #treset { position: absolute; left: 0; top: 0; z-index: 1; padding: 6px 14px; background: var(--bg); text-align: left; }
 #treset small { display: block; color: var(--soft); font-size: .8rem; }
-#tree { position: relative; width: min(380px, 100%); aspect-ratio: 300 / 420; margin: 40px auto 0; }
+#tree { position: relative; width: min(380px, 100%); aspect-ratio: 300 / 420; margin: 60px auto 0; }
 #tree svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.tier { position: absolute; left: 0; right: 0; background: var(--bg); pointer-events: none;
+  clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% calc(100% - 14px), calc(100% - 14px) 100%, 14px 100%, 0 calc(100% - 14px), 0 14px); }
 /* octagon nodes: the outer colour is the ring, ::before the face */
 .tn { --oct: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
   position: absolute; width: 11%; aspect-ratio: 1; transform: translate(-50%, -50%); display: grid; place-items: center; background: var(--dim); clip-path: var(--oct); }
