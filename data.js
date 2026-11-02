@@ -55,11 +55,15 @@ const LOADOUTS = [
 let SYS;
 const setLoadout = w => { SYS = LOADOUTS[w % LOADOUTS.length].map((id, s) => ({ id, ...CATALOG[id], ...TIER[s] })); };
 setLoadout(0);
-const MAXL = 50, UPM = [[.25, 1.17], [.8, 1.2], [2.5, 1.25]]; // upgrade k costs unlock * UPM[k][0] * UPM[k][1]^level
-// Total life earned for a fully terraformed planet: GOAL on the first world (a sim player takes ~13 min), then x GOAL_GROWTH per world.
-// The warp boost doubles output each world, so later worlds still get faster (world 8 takes under 2 min) without becoming one tap.
-const GOAL = 5e8, GOAL_GROWTH = 4;
-// Highest world number: every value stays finite well past it (goal 5e8 x 4^400 ~ 1e250, life checked < 1e300). Warps stop counting here.
+const MAXL = 50, UPM = [[.25, 1.22], [.8, 1.26], [2.5, 1.3]]; // upgrade k costs unlock * UPM[k][0] * UPM[k][1]^level (x price scale)
+// Pacing (tuned with a greedy-buyer simulation; a real player is about 1.5-2x slower):
+// - every warp doubles output (boost) and doubles prices, taps and flat rewards (PRICE_GROWTH), so each world plays like
+//   the first with bigger numbers and upgrades keep mattering;
+// - the goal grows x GOAL_GROWTH per world plus DIFFICULTY per world for the first DIFFICULTY_CAP worlds, which absorbs
+//   the talents a player collects over that span. Sim: world 1 ~12 min, then 8, 7, 5, 4.7 ... settling near 2-4 min;
+//   a player who never spends seeds settles near 28 min instead of growing without limit.
+const GOAL = 3e8, GOAL_GROWTH = 2, PRICE_GROWTH = 2, DIFFICULTY = 1.5, DIFFICULTY_CAP = 10;
+// Highest world number: every value stays finite well past it (goal 3e8 x 2^400 x 1.5^10 ~ 1e130, life checked < 1e300). Warps stop counting here.
 const MAX_WORLD = 400;
 // Always one clear next step at the top, with a reward: [text, progress, target, reward, go].
 // go: the system a tap on the unfinished goal jumps to (-1 = back to the planet); a function picks it at tap time.

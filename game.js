@@ -3,13 +3,13 @@
 // Muted slate night, white line-art, soft pink accents.
 const C = { bg: '#2b3047', deep: '#1f2333', line: '#e9ecf5', dim: '#59607f', dot: '#6f79a3', soft: '#8f99c4', pink: '#e98aa3', sil: '#1c2030', sun: '#ffe08a', zap: '#bfe6ff', lava: '#ff8a3d', gas: '#c9d6b8' };
 
-const ucost = (s, k, l) => Math.ceil(SYS[s].unlock * UPM[k][0] * UPM[k][1] ** l);
+const priceScale = () => PRICE_GROWTH ** S.world; // prices, taps and flat rewards grow with the warp boost
+const ucost = (s, k, l) => Math.ceil(SYS[s].unlock * UPM[k][0] * UPM[k][1] ** l * priceScale());
 const sysRate = (s, L) => SYS[s].base * (1 + L[0]) * (1 + .25 * L[1]) * 1.08 ** L[2];
-const tapOf = rate => Math.max(4, Math.round(rate * .15));
+const tapOf = rate => Math.max(4 * priceScale(), Math.round(rate * .15));
 // Log scale so the planet heals steadily while income grows exponentially; /1000 keeps the first taps from jumping to 25%.
-const goalOf = () => GOAL * GOAL_GROWTH ** S.world * (S.boon === 'short' ? .75 : 1);
+const goalOf = () => GOAL * GOAL_GROWTH ** S.world * DIFFICULTY ** Math.min(S.world, DIFFICULTY_CAP) * (S.boon === 'short' ? .75 : 1);
 const healOf = earned => Math.min(1, Math.log10(1 + earned / 1000) / Math.log10(1 + goalOf() / 1000));
-console.assert(ucost(0, 0, 0) === 25 && ucost(0, 0, 1) === 30 && ucost(0, 2, 0) === 250, 'upgrade cost');
 console.assert(sysRate(0, [0, 0, 0]) === 3 && sysRate(0, [1, 4, 0]) === 12, 'system rate');
 
 const fmt = n => {
@@ -32,10 +32,11 @@ const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 
 // ach: achievement ids earned; n: lifetime counters the achievements watch (crits, comets caught, taps in meteor showers, longest time away in s)
 const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0 }, daily: '', boon: '', offer: [], contract: null }; // boon: the warp boon on this world; offer: the 3 boons the waiting warp offers; contract: the open side job (data only) // daily: local date of the last supply drop opened
 console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
+console.assert(ucost(0, 0, 0) === 25 && ucost(0, 0, 1) === 31 && ucost(0, 2, 0) === 250, 'upgrade cost'); // world 0: price scale 1
 const has = id => S.tal.includes(id);
-const boost = () => (has('echo') ? 2.5 : 2) ** S.world; // every world you finish multiplies all output for good
+const boost = () => 2 ** S.world; // every world you finish doubles all output for good (prices double too: priceScale)
 // Talent multipliers: on everything, and on pairs of systems.
-const allMul = () => (has('roots') ? 1.25 : 1) * (has('bloom') ? 1.5 : 1) * (has('gaia') ? 2 : 1) * (has('kinetic') ? 1 + Math.min(1, S.taps / 1e4) : 1);
+const allMul = () => (has('echo') ? Math.min(1.5, 1 + .05 * S.world) : 1) * (has('roots') ? 1.25 : 1) * (has('bloom') ? 1.3 : 1) * (has('gaia') ? 1.5 : 1) * (has('kinetic') ? 1 + Math.min(1, S.taps / 1e4) : 1);
 const PAIR = { lens: [0, 1], swarm: [2, 3], grow: [4, 5] };
 // live = false: without the solar flare (offline pay and one-off rewards must not freeze a 12 s event's x2)
 const sysOut = (s, live = true) => sysRate(s, S.L[s]) * boost() * allMul() * ((SLOT[s].ground ? trait().ground : trait().orbit) || 1) * (live && ev?.id === 'flare' ? 2 : 1) * (S.boon === 'summer' ? 1.5 : 1)
@@ -43,8 +44,8 @@ const sysOut = (s, live = true) => sysRate(s, S.L[s]) * boost() * allMul() * ((S
 const rateOf = (live = true) => SYS.reduce((a, _, s) => a + (S.on[s] ? sysOut(s, live) : 0), 0);
 const tapGain = () => (tapOf(rateOf()) * (has('spark') ? 3 : 1) + (has('tapecho') ? rateOf() : 0)) * (trait().tap || 1) * (S.boon === 'hands' ? 3 : 1); // one tap, before a crit
 const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (has('thrift') ? .9 : 1) * (S.boon === 'bulk' ? .8 : 1)); // level l -> l+1 of upgrade k
-const unlockCost = s => Math.ceil(SYS[s].unlock * (has('cheap') ? .75 : 1));
-const rewardOf = g => g.reward * (has('patron') ? 3 : 1) * (trait().reward || 1);
+const unlockCost = s => Math.ceil(SYS[s].unlock * priceScale() * (has('cheap') ? .75 : 1));
+const rewardOf = g => g.reward * priceScale() * (has('patron') ? 3 : 1) * (trait().reward || 1);
 const unlocked = s => s === 0 || S.on[s - 1];
 const items = []; // life patches on the planet: { u, v (texture coords), born }
 const pct = () => Math.floor(healOf(S.earned) * 100);
@@ -1161,7 +1162,7 @@ function updateUI() {
   if (S.done) { // the world is alive: the goal bar holds the warp until the player is ready
     goal.classList.add('ready');
     set($('gtext'), `${world().name} is alive. Warp to ${WORLDS[(S.world + 1) % WORLDS.length].name}`);
-    set($('grew'), `x${fmt(has('echo') ? 2.5 : 2)}`);
+    set($('grew'), 'x2');
   } else if (g) {
     const n = Math.min(g.get(), g.need);
     goal.classList.toggle('ready', n >= g.need && g.reward > 0);
@@ -1282,15 +1283,15 @@ const TAL = [
   ['swarm', 'Backbone', () => `${SYS[2].name} and ${SYS[3].name} output x2.`, () => TILE[SYS[2].id].lit, 150, t1.T, 'roots', t1.via],
   ['thrift', 'Bulk Orders', 'Upgrades cost 10% less.', src(TI.tag), 100, t1.M, 'swarm', t1.M],
   ['patron', 'Patron', 'Goal rewards x3.', src(TI.gift), 200, t1.M, 'swarm', t1.M],
-  ['bloom', 'Bloom', 'All output +50%.', ENERGY, 150, t1.B, 'swarm'],
+  ['bloom', 'Bloom', 'All output +30%.', ENERGY, 150, t1.B, 'swarm'],
   ['autotap', 'Tap Bot', 'Taps the planet for you once a second.', src(TI.bot), 258, t1.T, 'roots', t1.via],
   ['autotap2', 'Tap Swarm', 'Automatic taps 4 times a second.', src(TI.bot), 258, t1.B, 'autotap'],
   ['sleep', 'Night Shift', 'Offline earnings count up to 24h instead of 12h.', src(TI.moon), 42, t2.T, 'bloom', t2.via],
   ['dream', 'Lucid Dreams', 'Offline earnings x2.', src(TI.moon), 42, t2.B, 'sleep'],
   ['grow', 'Heavy Hitters', () => `${SYS[4].name} and ${SYS[5].name} output x2.`, () => TILE[SYS[4].id].lit, 150, t2.T, 'bloom', t2.via],
   ['cheap', 'Fast Track', 'Unlocking systems costs 25% less.', src(TI.tag), 100, t2.M, 'grow', t2.M],
-  ['echo', 'Warp Echo', 'Each healed world multiplies output x2.5 instead of x2.', src(TI.rings), 200, t2.M, 'grow', t2.M],
-  ['gaia', 'Gaia', 'All output x2.', src(TI.sprout), 150, t2.B, 'grow'],
+  ['echo', 'Warp Echo', 'All output +5% for every world healed, up to +50%.', src(TI.rings), 200, t2.M, 'grow', t2.M],
+  ['gaia', 'Gaia', 'All output +50%.', src(TI.sprout), 150, t2.B, 'grow'],
   ['kinetic', 'Kinetic Grid', '+1% output per 100 lifetime taps, up to +100%.', src(TI.bolt), 258, t2.T, 'bloom', t2.via],
   ['tapecho', 'Tap Echo', 'Every tap also adds a full second of income.', HAND, 258, t2.B, 'kinetic'],
 ].map(([id, name, desc, icon, x, y, req, via]) => ({ id, name, desc, icon, x, y, req, via }));
@@ -1414,11 +1415,11 @@ function showWarp() { // the world just hit 100%: log the run, then offer the wa
 }
 function openWarp() {
   play('milestone');
-  const n = S.world + 1, next = WORLDS[n % WORLDS.length].name, mult = fmt(boost() * (has('echo') ? 2.5 : 2)), end = n % WORLDS.length === 0;
+  const n = S.world + 1, next = WORLDS[n % WORLDS.length].name, mult = fmt(boost() * 2), end = n % WORLDS.length === 0;
   $('warph').textContent = end ? 'Sector terraformed' : 'Planet terraformed';
   $('warptxt').textContent = end // every world in the cycle is alive: the planet log, then the next cycle
-    ? `All ${WORLDS.length} worlds are alive. Best times: ${WORLDS.map(w => `${w.name} ${mmss(S.best[w.name] ?? 0)}`).join(', ')}. ${S.taps} taps and ${S.ach.length}/${ACH.length} achievements in all. Cycle ${roman(n / WORLDS.length + 1)} starts back at ${next}, with all output x${mult} forever.`
-    : `${world().name} is alive. Took ${mmss(S.best[world().name])}. Next stop: ${next}, with all output x${mult} forever. You also earn a Star Seed to spend on Talents.`;
+    ? `All ${WORLDS.length} worlds are alive. Best times: ${WORLDS.map(w => `${w.name} ${mmss(S.best[w.name] ?? 0)}`).join(', ')}. ${S.taps} taps and ${S.ach.length}/${ACH.length} achievements in all. Cycle ${roman(n / WORLDS.length + 1)} starts back at ${next}, with all output x${mult} for good.`
+    : `${world().name} is alive. Took ${mmss(S.best[world().name])}. Next stop: ${next}: all output x${mult} for good, prices and the goal grow to match. You also earn a Star Seed to spend on Talents.`;
   $('boonh').textContent = end ? `Pick a boon for cycle ${roman(n / WORLDS.length + 1)} and warp` : 'Pick a boon for the next world and warp';
   if (!S.offer.length) S.offer = BOONS.map(b => b.id).sort(() => Math.random() - .5).slice(0, 3); // saved: Stay, reload or reopen keep the same three
   $('boons').replaceChildren(...S.offer.map(id => {
@@ -1786,7 +1787,7 @@ function startEvent(id = Object.keys(EVENTS)[Math.random() * 3 | 0]) {
 }
 function endEvent() { ev = null; comet = null; evNext = (120 + Math.random() * 120) / (S.boon === 'storm' ? 3 : 1); } // Storm Season: 3x as often
 function catchComet() {
-  const g = Math.max(100, rateOf(false) * 60);
+  const g = Math.max(100 * priceScale(), rateOf(false) * 60);
   S.life += g; S.earned += g; S.n.comet++; buzz([30, 30, 60]);
   burst(comet.x, comet.y, [C.sun, C.line, C.pink], 40, 70); play('crit'); shake = .6;
   floats.push({ x: comet.x, y: comet.y - 10, text: '+' + fmt(g), life: 1.6, col: C.sun });
@@ -1813,7 +1814,7 @@ const CONTRACT_KINDS = { // pick() returns { arg, from?, secs } or null when the
   unlock: { pick: () => { const s = S.on.indexOf(false); return s > 0 && unlocked(s) ? { arg: s, secs: 180 } : null; }, text: c => `Unlock the ${SYS[c.arg].name}`, done: c => S.on[c.arg] },
   level: { pick: () => { const top = Math.max(...S.L.flat()); return top < MAXL ? { arg: Math.min(MAXL, top + 5), secs: 120 } : null; }, text: c => `Get any upgrade to Lv ${c.arg}`, done: c => Math.max(...S.L.flat()) >= c.arg },
   combo: { pick: () => ({ arg: 15, secs: 60 }), text: c => `Chain a ${c.arg}-tap combo`, done: c => combo >= c.arg },
-  earn: { pick: () => ({ arg: Math.max(500, rateOf() * 130), from: S.earned, secs: 90 }), text: c => `Earn ${fmt(c.arg)} life`, done: c => S.earned - c.from >= c.arg },
+  earn: { pick: () => ({ arg: Math.max(500 * priceScale(), rateOf() * 130), from: S.earned, secs: 90 }), text: c => `Earn ${fmt(c.arg)} life`, done: c => S.earned - c.from >= c.arg },
 };
 const conText = c => CONTRACT_KINDS[c.kind].text(c);
 function stepContract(dt) {
@@ -1829,7 +1830,7 @@ function stepContract(dt) {
   if (!S.intro || !S.on[0] || S.done || $('c').inert || (conNext -= dt) > 0) return;
   const options = Object.entries(CONTRACT_KINDS).map(([kind, k]) => { const o = k.pick(); return o && { kind, ...o }; }).filter(Boolean);
   const o = options[Math.random() * options.length | 0];
-  S.contract = { ...o, t: o.secs, reward: Math.max(300, rateOf(false) * 180) };
+  S.contract = { ...o, t: o.secs, reward: Math.max(300 * priceScale(), rateOf(false) * 180) };
   play('ui'); quip(`New contract: ${conText(S.contract)}. You have ${mmss(o.secs)}. Optional, but HQ pays well.`);
 }
 
@@ -1858,7 +1859,7 @@ function tapMoon() {
   if (S.n.moon === 1 || S.n.moon % 5 === 0) quip(QUIPS.moon);
 }
 function openCrate() {
-  const [x, y] = cratePos(last), g = Math.max(500, rateOf(false) * 600), seed = Math.random() < .1;
+  const [x, y] = cratePos(last), g = Math.max(500 * priceScale(), rateOf(false) * 600), seed = Math.random() < .1;
   S.life += g; S.earned += g; S.daily = crate.day; S.n.crates++; crate = null;
   if (seed) S.seeds++;
   burst(x, y, [C.sun, C.line, C.pink], 50, 70); play('coin'); buzz(30); shake = .4;
