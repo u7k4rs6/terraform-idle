@@ -830,7 +830,7 @@ function draw(t, heal) {
   P.fill(0, GY, W, H - GY, C.deep); P.fill(0, GY, W, 1, C.line); // ground
   drawColony(t, heal);
   SYS.forEach((_, s) => drawSystem(s, t));
-  SYS.forEach((_, s) => drawMarks(s, t));
+  if (!photo) SYS.forEach((_, s) => drawMarks(s, t)); // a photo is the scene only: no labels, prices or brackets
 
   for (const s of shots) {
     const k = s.t / s.dur, x = s.sx + (s.tx - s.sx) * k, shot = SYS[s.s].shot;
@@ -859,7 +859,7 @@ function draw(t, heal) {
     } else for (let o = 0; o < (b.w || 1); o++) P.line(b.x1 + o, b.y1, b.x2 + o, b.y2, b.col);
     if (b.end) P.fill(b.x2 - 1, b.y2 - 1, 3, 3, C.line);
   }
-  drawCrate(t);
+  if (!photo) drawCrate(t);
   for (const m of meteors) { P.line(m.x - m.vx * .08, m.y - m.vy * .08, m.x, m.y, C.sun); P.dot(m.x, m.y, C.line); } // streaks
   if (comet) { // gold head with a long fading tail; the pulsing ring says "tap me"
     for (let k = 1; k < 22; k++) { ctx.globalAlpha = 1 - k / 22; for (const dy of [0, 1]) P.dot(comet.x - k * 2, comet.y + dy + (k > 8 ? Math.round(Math.sin(k * .7 + t * 8)) : 0), k < 8 ? C.sun : C.soft); }
@@ -867,9 +867,9 @@ function draw(t, heal) {
     ctx.globalAlpha = 1; P.fill(comet.x - 2, comet.y - 2, 5, 5, C.sun); P.fill(comet.x - 1, comet.y - 1, 3, 3, C.line);
   }
   for (const q of parts) { ctx.globalAlpha = q.life; P.dot(q.x, q.y, q.color); }
-  for (const f of floats) { ctx.globalAlpha = f.life; text(f.text, f.x, f.y, f.col); }
+  if (!photo) for (const f of floats) { ctx.globalAlpha = f.life; text(f.text, f.x, f.y, f.col); }
   ctx.globalAlpha = 1;
-  if (combo >= 3) { // combo counter over the upper-left of the planet, fading as the chain runs out of time
+  if (combo >= 3 && !photo) { // combo counter over the upper-left of the planet, fading as the chain runs out of time
     ctx.globalAlpha = Math.max(.3, 1 - (t - comboAt) / COMBO_GAP);
     text(`${combo}` + (comboMul() > 1 ? ` x${comboMul()}` : ''), CX - R * .55, CY - R * .8, comboMul() > 1 ? C.sun : C.line, 2);
     ctx.globalAlpha = 1;
@@ -877,6 +877,7 @@ function draw(t, heal) {
 
   // first-run hints: tap the planet, then the Laser Station once it's affordable
   const bob = Math.round(Math.sin(t * 6) * 2);
+  if (photo) return; // takePhoto() reads the scene buffer itself
   if (!S.taps) blit(T.hand, CX + R * .2, CY - R * .3 + bob);
   else if (!S.on[0] && sel !== 0 && S.life >= unlockCost(0)) { const [x, y] = sysPos(0, t); blit(T.hand, x, y + 18 + bob); }
 
@@ -1086,6 +1087,33 @@ function closeSettings() {
   if (setOpener?.isConnected && setOpener !== document.body) setOpener.focus({ preventScroll: true });
 }
 $('gear').addEventListener('click', openSettings);
+// Photo mode: the scene without HUD, labels or numbers, at 3x, with a caption bar; the share sheet on phones, a PNG download elsewhere.
+let photo = false;
+function takePhoto() {
+  if (!W) return;
+  photo = true; try { draw(last, healOf(S.earned)); } finally { photo = false; }
+  const z = 3, h = Math.min(H, GY + 8), cap = 22 * z, c = mk(W * z, h * z + cap), g = c.getContext('2d'); // cropped just under the ground line (the bar lives below it)
+  g.imageSmoothingEnabled = false;
+  g.drawImage(buf, 0, 0, W, h, 0, 0, W * z, h * z);
+  g.fillStyle = C.deep; g.fillRect(0, h * z, c.width, cap);
+  g.fillStyle = C.pink; g.fillRect(0, h * z, c.width, z);
+  g.font = `${14 * z}px VT323, monospace`; g.textBaseline = 'middle';
+  const cycle = Math.floor(S.world / WORLDS.length), y = h * z + cap / 2 + z;
+  g.fillStyle = C.line; g.textAlign = 'left'; g.fillText(`${world().name}${cycle ? ' ' + roman(cycle + 1) : ''} · ${pct()}% terraformed`, 8 * z, y);
+  g.fillStyle = C.soft; g.textAlign = 'right'; g.fillText('TERRAFORM', c.width - 8 * z, y);
+  if (!calm()) flash = .6;
+  play('ui');
+  const name = `terraform-${world().name.toLowerCase().replace(/\s+/g, '-')}.png`;
+  c.toBlob(async blob => {
+    if (!blob) return;
+    const file = new File([blob], name, { type: 'image/png' });
+    try { if (navigator.canShare?.({ files: [file] })) return await navigator.share({ files: [file], title: 'Terraform', text: `${world().name}, ${pct()}% terraformed` }); } catch (e) { if (e?.name === 'AbortError') return; }
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name });
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1e4);
+    toast(`Photo saved: ${name}`);
+  }, 'image/png');
+}
+$('sphoto').addEventListener('click', () => { closeSettings(); requestAnimationFrame(takePhoto); });
 $('sclose').addEventListener('click', closeSettings);
 
 // ---------- hud / panel ----------
@@ -1220,6 +1248,7 @@ $('next').addEventListener('click', () => openPanel((sel + 1) % SYS.length));
 addEventListener('keydown', e => {
   if (e.key === 'Escape') { if (!$('talents').hidden) closeTalents(); else if (!$('settings').hidden) closeSettings(); else closePanel(); }
   // 1-6 open a system's panel (not while a dialog is up or typing in a field)
+  if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey && !e.altKey && !$('c').inert && !/TEXTAREA|INPUT/.test(e.target.tagName)) takePhoto();
   if (e.key >= '1' && e.key <= '6' && !e.ctrlKey && !e.metaKey && !e.altKey && !$('c').inert && !/TEXTAREA|INPUT/.test(e.target.tagName)) openPanel(+e.key - 1);
 });
 
