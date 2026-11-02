@@ -721,7 +721,7 @@ function drawLife(t, heal) {
   }
   ctx.globalAlpha = 1;
 }
-let moonAt = null, moonI = 0, moonReady = 0;
+let moonAt = null, moonI = 0, moonReady = 0; // moonReady: when the next moon fact may show
 function drawMoon(x, y, k) { // k: 0..1 while it grows in
   const r = Math.max(1, Math.round(R * .14 * k));
   const sh = Math.round(r * .3); // shadow side starts this far right of centre
@@ -827,7 +827,7 @@ function draw(t, heal) {
 
   ridge.forEach((h, x) => { P.fill(x, GY - h, 1, h, C.deep); P.dot(x, GY - h, C.dim); }); // dark mountains, behind the planet
   // moon: a tilted orbit whose near side crosses the planet's upper face (well above the colony), far side behind its top
-  const ma = t * .2, moon = [Math.round(CX + Math.cos(ma) * R * 1.2), Math.round(CY - R * .5 + Math.sin(ma) * R * .25 - Math.cos(ma) * R * .1)], front = Math.sin(ma) > 0;
+  const ma = t * .2, moon = [Math.round(CX + Math.cos(ma) * R * 1.1), Math.round(CY - R * .45 + Math.sin(ma) * R * .25 - Math.cos(ma) * R * .1)], front = Math.sin(ma) > 0;
   // milestones ease in over a few % of healing instead of popping: moon at 25%, clouds at 50%, rings at 75%
   const ramp = at => Math.max(0, Math.min(1, (heal - at) / .03)), mo = ramp(.25), ck = ramp(.5), rk = ramp(.75), rr = R * (1.1 + .28 * rk);
   if (rk) P.ring(CX, CY, rr, rr * .145, Math.PI, 2 * Math.PI);
@@ -1785,14 +1785,14 @@ cv.addEventListener('pointerdown', e => {
   const [ox, oy] = camOrigin(), x = (e.clientX / PX - ox) / cam.z, y = (e.clientY / PX - oy) / cam.z;
   if (comet && Math.hypot(x - comet.x, y - comet.y) <= HIT) return catchComet();
   if (crate) { const [cx, cy] = cratePos(last); if (Math.abs(x - cx) <= 17 && y >= cy - 32 && y <= cy + 12) return openCrate(); } // crate or its parachute (a box, so it doesn't steal taps from the systems nearby)
-  let hit = -1, best = Infinity; // anywhere on a sprite (plus a finger's margin) counts; the nearest centre wins
+  let hit = -1, best = Infinity, onArt = false; // anywhere on a sprite (plus a finger's margin) counts; the nearest centre wins
   SYS.forEach((_, s) => {
     const [sx, sy] = sysPos(s, last), img = look(s).lit, d = Math.hypot(x - sx, y - sy);
-    if (Math.abs(x - sx) <= img.width / 2 + HIT / 2 && Math.abs(y - sy) <= img.height / 2 + HIT / 2 && d < best) { best = d; hit = s; }
+    if (Math.abs(x - sx) <= img.width / 2 + HIT / 2 && Math.abs(y - sy) <= img.height / 2 + HIT / 2 && d < best) { best = d; hit = s; onArt = Math.abs(x - sx) <= img.width / 2 && Math.abs(y - sy) <= img.height / 2; }
   });
+  // the moon wins a tap unless it lands on a machine's own drawing (not just the finger margin around it); behind the planet only its visible part counts
+  if (moonAt && !onArt && Math.hypot(x - moonAt.x, y - moonAt.y) <= moonAt.r + 6 && (moonAt.front || (x - CX) ** 2 + (y - CY) ** 2 > R * R)) return tapMoon();
   if (hit >= 0) return openPanel(hit);
-  // the moon comes after the systems (a passing moon never steals their taps); behind the planet only its visible part counts
-  if (moonAt && Math.hypot(x - moonAt.x, y - moonAt.y) <= moonAt.r + 3 && (moonAt.front || (x - CX) ** 2 + (y - CY) ** 2 > R * R)) return tapMoon();
   if (sel >= 0) return closePanel(); // panel open: a tap on the planet, the ground or empty sky just closes it (objects above still act)
   if (y >= GY || city.slice(0, cityN).some(b => x >= b.x && x < b.x + b.w && y >= GY - b.h - 5)) return; // the ground and the colony are solid
   if ((x - CX) ** 2 + (y - CY) ** 2 > R * R) return;
@@ -1814,7 +1814,7 @@ const tapSomewhere = (auto = false) => tapPlanet(CX + (Math.random() - .5) * R, 
 // Combo: hand taps less than COMBO_GAP apart chain up; 10 in a row pay x2, 25 pay x3. Pausing breaks it.
 const COMBO_GAP = .6, comboMul = () => (combo >= 25 ? 3 : combo >= 10 ? 2 : 1);
 let combo = 0, comboAt = -9;
-function tapPlanet(x, y, auto = false) {
+function tapPlanet(x, y, auto = false, mult = 1) {
   if (!auto) {
     const was = comboMul();
     combo = last - comboAt <= COMBO_GAP ? combo + 1 : 1; comboAt = last;
@@ -1822,7 +1822,7 @@ function tapPlanet(x, y, auto = false) {
     S.n.combo = Math.max(S.n.combo || 0, combo);
   }
   const crit = Math.random() < (has('crit2') ? .2 : has('crit') ? .1 : 0), storm = ev?.id === 'shower'; // Lucky Strike / Jackpot; meteor showers pay x5
-  const g = tapGain() * (crit ? 10 : 1) * (storm ? 5 : 1) * (auto ? 1 : comboMul());
+  const g = tapGain() * mult * (crit ? 10 : 1) * (storm ? 5 : 1) * (auto ? 1 : comboMul());
   earn(g); S.taps++;
   if (crit) S.n.crit++;
   if (storm) S.n.storm++;
@@ -1909,15 +1909,12 @@ function stepCrate(dt) {
   toast('SUPPLY DROP incoming. Tap the crate (or press Enter on the planet) to open it.', true); play('ui');
 }
 // Easter egg: the moon answers a tap with a fact and a little life, once every 3 s.
+// The moon: every tap counts as a planet tap at double value (combo, crits and showers apply); its facts come at most every 4 s.
 function tapMoon() {
-  if (last < moonReady) return;
-  moonReady = last + 3;
-  const g = tapGain() * 5;
-  earn(g); S.n.moon++;
-  burst(moonAt.x, moonAt.y, [C.soft, C.line], 16, 30); play('coin');
-  floats.push({ x: moonAt.x, y: moonAt.y - moonAt.r - 6, text: '+' + fmt(g), life: 1.4, col: C.soft });
-  toast(MOON_FACTS[moonI++ % MOON_FACTS.length]);
-  if (S.n.moon === 1 || S.n.moon % 5 === 0) quip(QUIPS.moon);
+  tapPlanet(moonAt.x, moonAt.y, false, 2);
+  burst(moonAt.x, moonAt.y, [C.soft, C.line], 12, 30); S.n.moon++;
+  if (last >= moonReady) { moonReady = last + 4; toast(MOON_FACTS[moonI++ % MOON_FACTS.length]); }
+  if (S.n.moon === 1 || S.n.moon % 25 === 0) quip(QUIPS.moon);
 }
 function openCrate() {
   const [x, y] = cratePos(last), g = pay(600, 500), seed = Math.random() < .1;
