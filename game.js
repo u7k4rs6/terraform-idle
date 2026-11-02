@@ -1763,8 +1763,9 @@ cv.addEventListener('pointerdown', e => {
   });
   if (hit >= 0) return openPanel(hit);
   if (moonAt && Math.hypot(x - moonAt.x, y - moonAt.y) <= moonAt.r + 3 && (moonAt.front || (x - CX) ** 2 + (y - CY) ** 2 > R * R)) return tapMoon(); // after the systems, so a passing moon never steals their taps; behind the planet: only the part that shows
+  if (sel >= 0) return closePanel(); // panel open: a tap on the planet, the ground or empty sky just closes it (objects above still act)
   if (y >= GY) return; // the ground is solid
-  if ((x - CX) ** 2 + (y - CY) ** 2 > R * R) return closePanel();
+  if ((x - CX) ** 2 + (y - CY) ** 2 > R * R) return;
   tapPlanet(x, y);
 });
 // keyboard players tap the planet with Enter or Space while the canvas has focus
