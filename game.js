@@ -1286,9 +1286,9 @@ function updateUI() {
   const g = GOALS[S.goal], goal = $('goal');
   goal.hidden = !g && !S.done;
   if (S.done) { // the world is alive: the goal bar holds the warp until the player is ready
-    goal.classList.add('ready');
-    set($('gtext'), `${world().name} is alive. Warp to ${WORLDS[(S.world + 1) % WORLDS.length].name}`);
-    set($('grew'), 'x2');
+    goal.classList.toggle('ready', !lastWorld()); // nothing to claim at the edge of the map
+    set($('gtext'), lastWorld() ? `${world().name} is alive. You reached the edge of the map` : `${world().name} is alive. Warp to ${WORLDS[(S.world + 1) % WORLDS.length].name}`);
+    set($('grew'), lastWorld() ? '' : 'x2');
   } else if (g) {
     const n = Math.min(g.get(), g.need);
     goal.classList.toggle('ready', n >= g.need && g.reward > 0);
@@ -1529,8 +1529,17 @@ function showWarp() { // the world just hit 100%: log the run, then offer the wa
   burst(CX, CY, [C.line, C.pink, C.soft], 80, 90);
   openWarp();
 }
+const lastWorld = () => S.world >= MAX_WORLD; // the edge of the map: no further warp
 function openWarp() {
   play('milestone');
+  if (lastWorld()) { // the end of the line: no boons, no seed, nothing to warp to
+    $('warph').textContent = 'Edge of the map';
+    $('warptxt').textContent = `${world().name} is alive, and so is every world out to the edge of the map. There is nowhere left to warp. Thank you for playing, Engineer.`;
+    $('boonh').textContent = ''; $('boons').replaceChildren();
+    closePanel(); closeTalents(); closeSettings();
+    $('warp').hidden = false; shield(true);
+    return $('warpstay').focus();
+  }
   const n = S.world + 1, next = WORLDS[n % WORLDS.length].name, mult = fmt(boost() * 2), end = n % WORLDS.length === 0;
   $('warph').textContent = end ? 'Sector terraformed' : 'Planet terraformed';
   $('warptxt').textContent = end // every world in the cycle is alive: the planet log, then the next cycle
@@ -1560,6 +1569,7 @@ $('warpstay').addEventListener('click', () => { // admire the living planet; the
 
 // Start a fresh dead world: everything resets except the permanent warp boost.
 function warp(boon = '') {
+  if (lastWorld()) return; // nothing past the edge of the map (and no seed for staying)
   $('warp').hidden = true; shield(false); play('warp');
   tiles[0].focus({ preventScroll: true });
   Object.assign(S, { world: Math.min(S.world + 1, MAX_WORLD), seeds: S.seeds + 1, boon, life: 0, earned: 0, goal: 1, start: last,
@@ -2174,6 +2184,7 @@ function step(ms) {
     console.assert(/^\d{4}-\d{2}-\d{2}$/.test(today()), 'daily date format');
     Object.assign(S, { intro: true, daily: today() }); crateWait = 0; stepCrate(1); console.assert(!crate, 'one supply drop per day');
     console.assert(CONTRACT_KINDS.unlock.pick()?.arg === 1, 'contract: unlock the next system');
+    const seeds = S.seeds; S.world = MAX_WORLD; warp('hands'); console.assert(S.world === MAX_WORLD && S.seeds === seeds, 'warp: none past the last world'); S.world = 0;
     const sample = { ...saveFields(), seeds: 3, tal: ['spark'], intro: false, done: true, best: { CRIMSON: 99 }, ach: ['light'], daily: '2026-01-01', boon: 'hands',
       offer: ['head'], contract: { kind: 'combo', arg: 15, secs: 60, t: 9, reward: 1 }, n: { ...S.n, crit: 7 } };
     const back = fromSave(JSON.parse(JSON.stringify(sample)), 0), lost = Object.keys(sample).filter(k => JSON.stringify(back[k]) !== JSON.stringify(sample[k]));
