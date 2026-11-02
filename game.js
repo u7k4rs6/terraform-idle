@@ -700,8 +700,6 @@ function sysPos(s, t) {
   let x = CX + sl.x * R0, y = sl.ground ? GY - h / 2 : CY + sl.y * R0 * FY + Math.sin(t * 1.5 + s * 1.3);
   x = Math.max(w / 2 + 2, Math.min(W - w / 2 - 2, x));
   if (!sl.ground) y = Math.max(TOP + h / 2 + 10, y); // room for the label above
-  const k = calm() ? 0 : Math.max(0, 1 - (last - (SYS[s].fx ?? -9)) / .22); // recoil: kicked back from the shot, easing home
-  if (k) { x -= Math.cos(SYS[s].fang) * 3 * k * k; y -= Math.sin(SYS[s].fang) * 3 * k * k; }
   return [Math.round(x), Math.round(y)];
 }
 const muzzle = s => { const [x, y] = sysPos(s, last), [dx, dy] = MUZZLE[SYS[s].id] || [0, 0]; return [x + dx, y + dy]; };
@@ -949,7 +947,10 @@ const canAct = s => S.on[s] ? S.L[s].some((l, k) => l < MAXL && S.life >= price(
 
 // A system: shaded line-art when unlocked, dim outline when next, dotted silhouette otherwise.
 function drawSystem(s, t) {
-  const lk = look(s), m = S.on[s] ? markOf(s) : 0, img = S.on[s] ? lk.marks[m] : unlocked(s) ? lk.next : lk.sil, [x, y] = sysPos(s, t);
+  const lk = look(s), m = S.on[s] ? markOf(s) : 0, img = S.on[s] ? lk.marks[m] : unlocked(s) ? lk.next : lk.sil;
+  let [x, y] = sysPos(s, t);
+  const k = calm() ? 0 : Math.max(0, 1 - (last - (SYS[s].fx ?? -9)) / .22); // recoil: only the sprite kicks back (camera, labels and taps stay put)
+  if (k) { x -= Math.round(Math.cos(SYS[s].fang) * 3 * k * k); if (!SLOT[s].ground) y -= Math.round(Math.sin(SYS[s].fang) * 3 * k * k); } // ground machines slide, never sink
   if (m === 3) { ctx.globalAlpha = .25 + .15 * (calm() ? 1 : Math.sin(t * 3)); P.ring(x, y, img.width / 2 + 4, img.height / 2 + 4, 0, 2 * Math.PI, C.sun); ctx.globalAlpha = 1; } // Mark IV halo
   blit(img, x, y);
   const since = last - (SYS[s].fx ?? -9);
@@ -1634,7 +1635,7 @@ function openWarp() {
   $('warph').textContent = end ? 'Sector terraformed' : 'Planet terraformed';
   $('warptxt').textContent = end // every world in the cycle is alive: the planet log, then the next cycle
     ? `All ${WORLDS.length} worlds are alive. Best times: ${WORLDS.map(w => `${w.name} ${mmss(S.best[w.name] ?? 0)}`).join(', ')}. ${S.taps} taps and ${S.ach.length}/${ACH.length} achievements in all. Cycle ${roman(n / WORLDS.length + 1)} starts back at ${next}, with all output x${mult} for good.`
-    : `${world().name} is alive. Took ${mmss(S.best[world().name])}. Next stop: ${next}: all output x${mult} for good, prices and the goal grow to match. You also earn a Star Seed to spend on Talents.`;
+    : `${world().name} is alive. Took ${mmss(S.best[world().name] ?? 0)}. Next stop: ${next}: all output x${mult} for good, prices and the goal grow to match. You also earn a Star Seed to spend on Talents.`;
   $('boonh').textContent = end ? `Pick a boon for cycle ${roman(n / WORLDS.length + 1)} and warp` : 'Pick a boon for the next world and warp';
   if (!S.offer.length) S.offer = BOONS.map(b => b.id).sort(() => Math.random() - .5).slice(0, 3); // saved: Stay, reload or reopen keep the same three
   $('boons').replaceChildren(...S.offer.map(id => {
@@ -1785,6 +1786,7 @@ const FACE = [makeVos(0), makeVos(1)];
 let gLines = [], gi = 0, gShown = 0, gTimer = 0, gIntro = false, quipTimer = 0, quipAt = -1e9;
 function guide(lines, intro = false) {
   clearTimeout(quipTimer); $('guide').classList.remove('quip'); // a briefing replaces any passing remark
+  if (gIntro && !intro && !$('guide').hidden) { S.intro = true; save(); } // a briefing that cuts the intro short still ends it
   gLines = lines; gi = 0; gIntro = intro;
   $('guide').hidden = false;
   sayLine();
@@ -1865,7 +1867,7 @@ function save() {
   if (S.contract) S.contract.paused = $('c').inert; // a dialog is open: the time until the next load must not count
   try {
     localStorage.setItem(SAVE, JSON.stringify({
-      t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
+      t: hiddenAt || Date.now(), played: Math.max(0, last - S.start), // hidden tab: the loop stopped when it was hidden, so count from then
       S: saveFields(),
       items: items.slice(-150).map(it => [Math.round(it.u), Math.round(it.v)]),
     }));
