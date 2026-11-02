@@ -682,6 +682,37 @@ function shadeGlobe(glow) {
     if (Math.hypot(x - CX + R * .3, y - CY + R * .25) > R * 1.2) ctx.fillRect(x, y, 1, 1);
   }
 }
+// The healed planet comes alive: lightning in the clouds (50%+), birds circling (75%+), an aurora over the pole (100%).
+let bolt = null; // { x, y, life, seed }: the current lightning strike, spawned in stepLife()
+function stepLife(dt, heal) {
+  if (bolt && (bolt.life -= dt * 4) <= 0) bolt = null;
+  if (!bolt && heal >= .5 && !calm() && Math.random() < dt * .35) { // about one strike every 3 s
+    const a = Math.random() * 2 * Math.PI, d = R * .7 * Math.sqrt(Math.random());
+    bolt = { x: CX + Math.cos(a) * d, y: CY - R * .15 + Math.sin(a) * d * .6, life: 1, seed: Math.random() * 1e3 };
+  }
+}
+function drawLife(t, heal) {
+  if (calm()) t = 0; // reduced motion: everything holds still
+  if (bolt) { // a short forked zigzag with a bright flash at the top
+    ctx.globalAlpha = bolt.life; let x = bolt.x, y = bolt.y;
+    P.fill(x - 1, y - 1, 3, 3, C.line);
+    for (let k = 1; k <= 4; k++) { const nx = x + (hash(k, 1, bolt.seed) - .5) * 6, ny = y + 3 + hash(k, 2, bolt.seed) * 3; P.line(x, y, nx, ny, C.zap); x = nx; y = ny; }
+    ctx.globalAlpha = 1;
+  }
+  if (heal >= .75) for (let k = 0; k < 5; k++) { // birds on the near side of the globe, wings flapping
+    const a = t * .35 + k * .45, x = Math.round(CX + Math.cos(a) * R * .75), y = Math.round(CY - R * .45 + Math.sin(a * 2 + k) * R * .08 + k * 3);
+    if (Math.sin(a) < 0) continue; // behind the planet
+    const up = Math.sin(t * 9 + k * 2) > 0 ? -2 : 0; // wings up or level
+    for (const [dx, dy] of [[-3, up], [-2, up / 2], [-1, 0], [0, 1], [1, 0], [2, up / 2], [3, up]]) { P.dot(x + dx, y + dy + 1, C.sil); P.dot(x + dx, y + dy, C.line); } // white gull, dark underside
+  }
+  if (heal >= 1) for (let x = -Math.round(R * .62); x <= R * .62; x++) { // aurora curtains just inside the north limb
+    const top = CY - Math.sqrt(R * R - x * x) * .9, h = Math.round(R * .1 + R * .05 * Math.sin(x * .18 + t * 1.4) + R * .03 * Math.sin(x * .05 - t * .7));
+    ctx.globalAlpha = .5 + .25 * Math.sin(x * .3 + t * 2);
+    P.fill(CX + x, Math.round(top), 1, h, Math.sin(x * .07 + t * .3) > 0 ? '#7dffb0' : '#8fe3ff');
+    ctx.globalAlpha *= .5; P.fill(CX + x, Math.round(top) + h, 1, Math.round(h * .6), '#7dffb0'); // soft lower fringe
+  }
+  ctx.globalAlpha = 1;
+}
 function drawMoon(x, y, k) { // k: 0..1 while it grows in
   const r = Math.max(1, Math.round(R * .12 * k));
   for (let dy = -r; dy <= r; dy++) { const dx = Math.round(Math.sqrt(r * r - dy * dy)); P.fill(x - dx, y + dy, dx * 2 + 1, 1, C.soft); P.fill(x + Math.round(r * .3), y + dy, Math.max(0, dx - Math.round(r * .3)) + 1, 1, C.dim); }
@@ -782,6 +813,7 @@ function draw(t, heal) {
   shadeGlobe(c);
   const crew = Math.min(bots.length, S.L.reduce((a, L, s) => a + (S.on[s] ? 1 + L[0] : 0), 0)); // one walker per crew member, capped
   for (let k = 0; k < crew; k++) { const f = facePos(bots[k][0], bots[k][1]); if (f) blit(T.bot, f[0], f[1] + (Math.sin(t * 4 + k) > .6 ? -1 : 0)); }
+  drawLife(t, heal);
   if (rk) P.ring(CX, CY, rr, rr * .145, 0, Math.PI);
   if (mo && front) drawMoon(...moon, mo);
   for (const p of pulses) { ctx.globalAlpha = p.life; P.ring(p.x ?? CX, p.y ?? CY, p.r, p.r, 0, 2 * Math.PI, p.col || C.pink); } // planet-wide or at an impact
@@ -1714,7 +1746,7 @@ function step(ms) {
 
   const reached = STAGES.filter(s => heal >= s.at).length;
   if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); shake = .8; play('milestone'); if (stage === 2) quip(QUIPS.half); }
-  stepEvents(dt);
+  stepEvents(dt); stepLife(dt, heal);
   zoom += (1 - zoom) * Math.min(1, dt * 1.5);
   R = Math.round(R0 * zoom);
 
