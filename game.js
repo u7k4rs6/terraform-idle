@@ -6,7 +6,7 @@ const C = { bg: '#2b3047', deep: '#1f2333', line: '#e9ecf5', dim: '#59607f', dot
 const priceScale = () => PRICE_GROWTH ** S.world; // prices, taps and flat rewards grow with the warp boost
 const ucost = (s, k, l) => Math.ceil(SYS[s].unlock * UPM[k][0] * UPM[k][1] ** l * priceScale());
 const sysRate = (s, L) => SYS[s].base * (1 + L[0]) * (1 + .25 * L[1]) * 1.08 ** L[2];
-const tapOf = rate => Math.max(4 * priceScale(), Math.round(rate * .15));
+const tapOf = rate => Math.max(4 * priceScale(), Math.round(rate * .03)); // 3% of income a tap: rapid tapping (10/s, full combo) is ~2x faster, not 5x
 // Log scale so the planet heals steadily while income grows exponentially; /1000 keeps the first taps from jumping to 25%.
 const goalOf = () => GOAL * GOAL_GROWTH ** S.world * DIFFICULTY ** Math.min(S.world, DIFFICULTY_CAP) * (S.boon === 'short' ? .75 : 1);
 const healOf = earned => Math.min(1, Math.log10(1 + earned / 1000) / Math.log10(1 + goalOf() / 1000));
@@ -52,7 +52,7 @@ const sysOut = (s, live = true) => sysRate(s, S.L[s]) * boost() * allMul() * ((S
   * Object.entries(PAIR).reduce((m, [id, ss]) => (has(id) && ss.includes(s) ? m * 2 : m), 1);
 const rateOf = (live = true) => SYS.reduce((a, _, s) => a + (S.on[s] ? sysOut(s, live) : 0), 0);
 const pay = (secs, min) => Math.max(min * priceScale(), rateOf(false) * secs); // one-off rewards: secs of base income, at least min (scaled)
-const tapGain = () => (tapOf(rateOf()) * (has('spark') ? 3 : 1) + (has('tapecho') ? rateOf() : 0)) * (trait().tap || 1) * (S.boon === 'hands' ? 3 : 1); // one tap, before a crit
+const tapGain = () => tapOf(rateOf()) * (has('spark') ? 3 : 1) * (has('tapecho') ? 1.5 : 1) * (trait().tap || 1) * (S.boon === 'hands' ? 3 : 1); // one tap, before a crit
 const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (has('thrift') ? .9 : 1) * (S.boon === 'bulk' ? .8 : 1)); // level l -> l+1 of upgrade k
 const unlockCost = s => Math.ceil(SYS[s].unlock * priceScale() * (has('cheap') ? .75 : 1));
 const rewardOf = g => g.reward * priceScale() * (has('patron') ? 3 : 1) * (trait().reward || 1);
@@ -1348,7 +1348,7 @@ const TAL = [
   ['echo', 'Warp Echo', 'All output +5% for every world healed, up to +50%.', src(TI.rings), 200, t2.M, 'grow', t2.M],
   ['gaia', 'Gaia', 'All output +50%.', src(TI.sprout), 150, t2.B, 'grow'],
   ['kinetic', 'Kinetic Grid', '+1% output per 100 lifetime taps, up to +100%.', src(TI.bolt), 258, t2.T, 'bloom', t2.via],
-  ['tapecho', 'Tap Echo', 'Every tap also adds a full second of income.', HAND, 258, t2.B, 'kinetic'],
+  ['tapecho', 'Tap Echo', 'Taps are worth 50% more.', HAND, 258, t2.B, 'kinetic'],
 ].map(([id, name, desc, icon, x, y, req, via]) => ({ id, name, desc, icon, x, y, req, via }));
 const val = v => (typeof v === 'function' ? v() : v); // pair talents describe the current world's systems
 const talById = Object.fromEntries(TAL.map(t => [t.id, t]));
@@ -1811,8 +1811,8 @@ cv.addEventListener('keydown', e => {
   tapSomewhere();
 });
 const tapSomewhere = (auto = false) => tapPlanet(CX + (Math.random() - .5) * R, CY - R * (.2 + Math.random() * .5), auto); // a spot on the visible face
-// Combo: hand taps less than COMBO_GAP apart chain up; 10 in a row pay x2, 25 pay x3. Pausing breaks it.
-const COMBO_GAP = .6, comboMul = () => (combo >= 25 ? 3 : combo >= 10 ? 2 : 1);
+// Combo: hand taps less than COMBO_GAP apart chain up; 10 in a row pay x1.5, 25 pay x2. Pausing breaks it.
+const COMBO_GAP = .6, comboMul = () => (combo >= 25 ? 2 : combo >= 10 ? 1.5 : 1);
 let combo = 0, comboAt = -9;
 function tapPlanet(x, y, auto = false, mult = 1) {
   if (!auto) {
@@ -2090,7 +2090,7 @@ function step(ms) {
   const keep = JSON.stringify(S), was = { combo, crateWait };
   try {
     Object.assign(S, { on: [true, false, false, false, false, false], life: 1e12 });
-    console.assert([9, 10, 24, 25].map(n => (combo = n, comboMul())).join() === '1,2,2,3', 'combo tiers');
+    console.assert([9, 10, 24, 25].map(n => (combo = n, comboMul())).join() === '1,1.5,1.5,2', 'combo tiers');
     const base = { tap: tapGain(), price: price(0, 1), goal: goalOf(), out: sysOut(0) }, ratio = (id, f) => (S.boon = id, f());
     console.assert(ratio('hands', tapGain) === base.tap * 3 && ratio('short', goalOf) === base.goal * .75 && ratio('summer', () => sysOut(0)) === base.out * 1.5
       && ratio('bulk', () => price(0, 1)) === Math.ceil(ucost(0, 1, 0) * .8) && ratio('', () => price(0, 1)) === base.price, 'boon multipliers');
