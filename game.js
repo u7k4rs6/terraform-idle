@@ -6,7 +6,7 @@ const C = { bg: '#2b3047', deep: '#1f2333', line: '#e9ecf5', dim: '#59607f', dot
 const priceScale = () => PRICE_GROWTH ** S.world; // prices, taps and flat rewards grow with the warp boost
 const ucost = (s, k, l) => Math.ceil(SYS[s].unlock * UPM[k][0] * UPM[k][1] ** l * priceScale());
 const sysRate = (s, L) => SYS[s].base * (1 + L[0]) * (1 + .25 * L[1]) * 1.08 ** L[2];
-const tapOf = rate => Math.max(4 * priceScale(), Math.round(rate * .03)); // 3% of income a tap: rapid tapping (10/s, full combo) is ~2x faster, not 5x
+const tapOf = rate => Math.max(4 * priceScale(), Math.round(rate * .01)); // 1% of income a tap: rapid tapping (10/s, full combo) is only ~15-40% faster
 // Log scale so the planet heals steadily while income grows exponentially; /1000 keeps the first taps from jumping to 25%.
 const goalOf = () => GOAL * GOAL_GROWTH ** S.world * DIFFICULTY ** Math.min(S.world, DIFFICULTY_CAP) * (S.boon === 'short' ? .75 : 1);
 const healOf = earned => Math.min(1, Math.log10(1 + earned / 1000) / Math.log10(1 + goalOf() / 1000));
@@ -1811,8 +1811,8 @@ cv.addEventListener('keydown', e => {
   tapSomewhere();
 });
 const tapSomewhere = (auto = false) => tapPlanet(CX + (Math.random() - .5) * R, CY - R * (.2 + Math.random() * .5), auto); // a spot on the visible face
-// Combo: hand taps less than COMBO_GAP apart chain up; 10 in a row pay x1.5, 25 pay x2. Pausing breaks it.
-const COMBO_GAP = .6, comboMul = () => (combo >= 25 ? 2 : combo >= 10 ? 1.5 : 1);
+// Combo: hand taps less than COMBO_GAP apart chain up; 10 in a row pay x1.25, 25 pay x1.5. Pausing breaks it.
+const COMBO_GAP = .6, comboMul = () => (combo >= 25 ? 1.5 : combo >= 10 ? 1.25 : 1);
 let combo = 0, comboAt = -9;
 function tapPlanet(x, y, auto = false, mult = 1) {
   if (!auto) {
@@ -2090,7 +2090,7 @@ function step(ms) {
   const keep = JSON.stringify(S), was = { combo, crateWait };
   try {
     Object.assign(S, { on: [true, false, false, false, false, false], life: 1e12 });
-    console.assert([9, 10, 24, 25].map(n => (combo = n, comboMul())).join() === '1,1.5,1.5,2', 'combo tiers');
+    console.assert([9, 10, 24, 25].map(n => (combo = n, comboMul())).join() === '1,1.25,1.25,1.5', 'combo tiers');
     const base = { tap: tapGain(), price: price(0, 1), goal: goalOf(), out: sysOut(0) }, ratio = (id, f) => (S.boon = id, f());
     console.assert(ratio('hands', tapGain) === base.tap * 3 && ratio('short', goalOf) === base.goal * .75 && ratio('summer', () => sysOut(0)) === base.out * 1.5
       && ratio('bulk', () => price(0, 1)) === Math.ceil(ucost(0, 1, 0) * .8) && ratio('', () => price(0, 1)) === base.price, 'boon multipliers');
