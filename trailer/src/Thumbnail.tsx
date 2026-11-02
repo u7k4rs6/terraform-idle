@@ -3,7 +3,8 @@
 import React from 'react'
 import { AbsoluteFill, Img, staticFile, useVideoConfig } from 'remotion'
 
-const C = { night: '#0d0f18', deep: '#1f2333', line: '#e9ecf5', pink: '#e98aa3', hot: '#ff5c7a', sun: '#ffe08a', orange: '#ff8a3d', cyan: '#7fe3ff', dark: '#11131f' }
+// accents follow the game's amber palette (the key is still called pink)
+const C = { night: '#0d0f18', deep: '#1f2333', line: '#e9ecf5', pink: '#ffb547', hot: '#e0602a', sun: '#ffe08a', orange: '#ff8a3d', cyan: '#7fe3ff', dark: '#11131f' }
 const rnd = (i: number, s = 1) => { const x = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return x - Math.floor(x) } // fixed scatter
 const px = { imageRendering: 'pixelated' as const }
 const zig = (x0: number, y0: number, x1: number, y1: number, n: number, amp: number, seed: number) => // jagged line, ends fixed
@@ -21,7 +22,7 @@ export const Thumbnail: React.FC = () => {
   return (
     <AbsoluteFill style={{ background: `radial-gradient(circle at ${cx}px ${cy}px, #4a2340 0%, #241a35 35%, ${C.night} 75%)`, overflow: 'hidden', fontFamily: 'VT323' }}>
       {/* starburst behind the planet */}
-      <AbsoluteFill style={{ background: `repeating-conic-gradient(from 0deg at ${cx}px ${cy}px, rgba(233,138,163,.16) 0deg 5deg, transparent 5deg 15deg)`, WebkitMaskImage: `radial-gradient(circle at ${cx}px ${cy}px, black 20%, transparent 70%)` }} />
+      <AbsoluteFill style={{ background: `repeating-conic-gradient(from 0deg at ${cx}px ${cy}px, rgba(255,181,71,.14) 0deg 5deg, transparent 5deg 15deg)`, WebkitMaskImage: `radial-gradient(circle at ${cx}px ${cy}px, black 20%, transparent 70%)` }} />
       {Array.from({ length: 140 }, (_, i) => <div key={i} style={{ position: 'absolute', left: rnd(i, 1) * W, top: rnd(i, 2) * H, width: (rnd(i, 3) < .2 ? 6 : 4) * u, height: (rnd(i, 3) < .2 ? 6 : 4) * u, background: rnd(i, 4) < .25 ? C.pink : '#8f99c4', opacity: .35 + rnd(i, 5) * .6 }} />)}
       {/* atmosphere: cold on the dead side, hot on the living side */}
       <div style={{ position: 'absolute', left: cx - r * 1.5, top: cy - r * 1.5, width: r * 3, height: r * 3, borderRadius: '50%', background: `radial-gradient(circle, transparent 46%, rgba(255,92,122,.55) 50%, rgba(233,138,163,.18) 60%, transparent 70%)`, WebkitMaskImage: `linear-gradient(110deg, transparent 38%, black 55%)` }} />
@@ -70,19 +71,19 @@ export const Thumbnail: React.FC = () => {
       {/* Commander Vos, rim-lit, visor blazing */}
       <div style={{ position: 'absolute', left: -60 * u, bottom: -60 * u, width: vos, height: vos }}>
         <div style={{ position: 'absolute', left: '42%', top: '20%', width: '40%', height: '22%', borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,179,107,.9), transparent 70%)', filter: `blur(${20 * u}px)` }} />
-        <Img src={staticFile('art/vos.png')} style={{ ...px, position: 'absolute', inset: 0, width: '100%', filter: `${glow(C.hot, 26)} drop-shadow(${-8 * u}px 0 0 rgba(127,227,255,.5))` }} />
+        <Img src={staticFile('thumb/vos.png')} style={{ ...px, position: 'absolute', inset: 0, width: '100%', filter: `${glow(C.hot, 26)} drop-shadow(${-8 * u}px 0 0 rgba(127,227,255,.5))` }} />
       </div>
       {/* the logo: dark outline, pink extrusion, cyan ghost, sunrise face */}
       <div style={{ position: 'absolute', left: 0, right: 0, top: (wide ? 18 : 30) * u, textAlign: 'center', transform: 'rotate(-4deg)', fontSize: title, lineHeight: 1, letterSpacing: 6 * u }}>
         <div style={{ position: 'absolute', left: 0, right: 0, color: C.cyan, transform: `translate(${-14 * u}px, ${-6 * u}px)`, opacity: .8 }}>TERRAFORM</div>
-        <div style={{ position: 'absolute', left: 0, right: 0, color: C.pink, textShadow: Array.from({ length: 16 }, (_, i) => `${(i + 1) * u}px ${(i + 1) * 1.2 * u}px 0 ${i < 10 ? C.hot : '#7a2440'}`).join(',') }}>TERRAFORM</div>
+        <div style={{ position: 'absolute', left: 0, right: 0, color: C.pink, textShadow: Array.from({ length: 16 }, (_, i) => `${(i + 1) * u}px ${(i + 1) * 1.2 * u}px 0 ${i < 10 ? C.hot : '#6b3414'}`).join(',') }}>TERRAFORM</div>
         <div style={{ position: 'relative', color: 'transparent', background: `linear-gradient(${C.line} 45%, ${C.sun} 70%, ${C.orange})`, WebkitBackgroundClip: 'text', backgroundClip: 'text', filter: `drop-shadow(0 0 ${2 * u}px ${C.dark})`, WebkitTextStroke: `${3 * u}px ${C.dark}` }}>TERRAFORM</div>
       </div>
       {/* sticker */}
       <div style={{ position: 'absolute', right: (wide ? 30 : 14) * u, bottom: (wide ? 40 : 24) * u, width: (wide ? 300 : 250) * u, height: (wide ? 300 : 250) * u, transform: 'rotate(12deg)', filter: `drop-shadow(${8 * u}px ${8 * u}px 0 ${C.dark})` }}>
         <div style={{ position: 'absolute', inset: 0, background: C.sun, clipPath: `polygon(${Array.from({ length: 32 }, (_, i) => { const a = i / 32 * Math.PI * 2, k = i % 2 ? 41 : 50; return `${50 + Math.cos(a) * k}% ${50 + Math.sin(a) * k}%` }).join(',')})` }} />
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: C.dark, textAlign: 'center', lineHeight: .85 }}>
-          <div style={{ fontSize: (wide ? 52 : 44) * u }}>REVIVE</div><div style={{ fontSize: (wide ? 96 : 80) * u, color: '#b8233f' }}>5 DEAD</div><div style={{ fontSize: (wide ? 52 : 44) * u }}>WORLDS</div>
+          <div style={{ fontSize: (wide ? 52 : 44) * u }}>REVIVE</div><div style={{ fontSize: (wide ? 80 : 66) * u, color: '#b8233f' }}>12 DEAD</div><div style={{ fontSize: (wide ? 52 : 44) * u }}>WORLDS</div>
         </div>
       </div>
       <AbsoluteFill style={{ background: 'repeating-linear-gradient(rgba(0,0,0,.12) 0 2px, transparent 2px 4px), radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.6))' }} />
