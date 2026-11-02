@@ -16,7 +16,7 @@
 </header>
 <div id="toast" role="status" aria-live="polite"></div>
 <aside id="side">
-  <div class="box"><div id="life"></div><div id="rate"></div></div>
+  <div class="box"><div id="life"></div><div id="rate"></div><button id="gear" aria-label="Settings" aria-controls="settings"></button></div>
   <div class="box"><div id="wname"></div><small id="wtrait"></small><div id="heal" role="progressbar" aria-label="Terraformed" aria-valuemin="0" aria-valuemax="100"><div id="healbar"></div></div><div id="healtxt"></div></div>
 </aside>
 <!-- before the bar so the commander stands behind it -->
@@ -37,6 +37,18 @@
   <header id="thead"><span id="tseeds"></span><h2 id="tth">Talents</h2><button id="tclose" aria-label="Close talents">X</button></header>
   <div id="tscroll"><button id="treset">Reset<small>refund all</small></button><div id="tree"></div></div>
   <div id="tinfo"><div class="rt"><span id="tname"></span><small id="tdesc"></small></div><button id="tbuy" class="buy"></button></div>
+</section>
+<section id="settings" role="dialog" aria-modal="true" aria-labelledby="sth" hidden>
+  <div class="box">
+    <header><h2 id="sth">Settings</h2><button id="sclose" aria-label="Close settings">X</button></header>
+    <div id="sopts"></div>
+    <h3>Save</h3>
+    <p class="hint">Progress is saved in this browser only. Copy the code to carry it to another device, or paste one here to load it.</p>
+    <textarea id="scode" rows="3" aria-label="Save code" spellcheck="false" autocomplete="off"></textarea>
+    <div class="srow"><button id="sexport" class="act">Copy save code</button><button id="simport" class="act">Load code</button></div>
+    <button id="snew" class="act">New game</button>
+    <p class="hint">TERRAFORM · <a href="https://github.com/u7k4rs6/terraform-idle">source on GitHub</a></p>
+  </div>
 </section>
 <div id="warp" role="dialog" aria-modal="true" aria-labelledby="warph" hidden>
   <div class="box"><h2 id="warph">Planet terraformed</h2><p id="warptxt"></p><button id="warpbtn">Warp to next world &gt;&gt;</button><button id="warpstay">Stay a while</button></div>

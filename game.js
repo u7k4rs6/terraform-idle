@@ -416,11 +416,13 @@ function buildWorld() {
 }
 buildWorld();
 
+let compKey = '';
 function compose(t, heal) {
   // purchase patches: soft discs (drawn only when they change) that grow in over 2s and widen as the planet heals
   const r = 10 + 14 * heal, live = items.slice(-150), growing = live.some(it => t - it.born < 2);
   const key = live.length + '|' + Math.round(r * 2) + '|' + (live.at(-1)?.u ?? '');
   if (growing || key !== fieldKey) {
+    compKey = ''; // the patches changed: recompose below
     const m = mask.getContext('2d', { willReadFrequently: true });
     m.clearRect(0, 0, TW, TH);
     for (const it of live) {
@@ -436,6 +438,10 @@ function compose(t, heal) {
     }
     fieldPx = m.getImageData(0, 0, TW, TH).data; fieldKey = key;
   }
+  // the texture only changes when a texel crosses its threshold: recompose per 0.05% of healing, not per frame (the spin is in globe())
+  const ck = fieldKey + '|' + Math.round(heal * 2000);
+  if (ck === compKey) return;
+  compKey = ck;
   const o = compImg.data;
   for (let i = 0, j = 3; i < thr.length; i++, j += 4) {
     const f = fieldPx[j] / 255, src = thr[i] < heal || f > rim[i] ? lushPx : thr[i] < heal + .015 || f > rim[i] - .08 ? midPx : deadPx;
@@ -723,7 +729,7 @@ function drawMarks(s, t) {
   }
   if (canAct(s)) P.fill(x0 + w + 1, y0 - 4, 3, 3, C.pink);
   if (sel === s) { // blinking selection brackets
-    const col = Math.sin(t * 6) > 0 ? C.line : C.soft, l = x0 - 4, r = x0 + w + 3, tp = y0 - 4, bt = y0 + h + 3;
+    const col = calm() || Math.sin(t * 6) > 0 ? C.line : C.soft, l = x0 - 4, r = x0 + w + 3, tp = y0 - 4, bt = y0 + h + 3;
     for (const [bx, by, dx, dy] of [[l, tp, 1, 1], [r, tp, -1, 1], [l, bt, 1, -1], [r, bt, -1, -1]]) { P.fill(Math.min(bx, bx + dx * 4), by, 5, 1, col); P.fill(bx, Math.min(by, by + dy * 4), 1, 5, col); }
   }
 }
@@ -797,18 +803,20 @@ function draw(t, heal) {
   // screen: the scene scaled up with nearest-neighbour
   out.imageSmoothingEnabled = false;
   out.fillStyle = C.bg; out.fillRect(0, 0, cv.width, cv.height);
-  const [ox, oy] = camOrigin(), sx = shake ? Math.round((Math.random() - .5) * shake * 6) : 0, sy = shake ? Math.round((Math.random() - .5) * shake * 6) : 0;
+  const [ox, oy] = camOrigin(), still = calm(), sx = shake && !still ? Math.round((Math.random() - .5) * shake * 6) : 0, sy = shake && !still ? Math.round((Math.random() - .5) * shake * 6) : 0;
   out.drawImage(buf, (ox + sx) * K, (oy + sy) * K, W * cam.z * K, H * cam.z * K);
-  const gx = (t * 7 | 0) % 8 * 31, gy = (t * 5 | 0) % 8 * 17; // fine grain: one screen pixel per speck, shifted a few times a second
+  const gx = still ? 0 : (t * 7 | 0) % 8 * 31, gy = still ? 0 : (t * 5 | 0) % 8 * 17; // fine grain: one screen pixel per speck, shifted a few times a second (held still for reduced motion)
   out.save(); out.translate(-gx, -gy); out.fillStyle = grainPat; out.fillRect(gx, gy, cv.width, cv.height); out.restore();
-  if (flash) { out.fillStyle = `rgba(233,236,245,${flash})`; out.fillRect(0, 0, cv.width, cv.height); } // warp flash
+  if (flash && !still) { out.fillStyle = `rgba(233,236,245,${flash})`; out.fillRect(0, 0, cv.width, cv.height); } // warp flash
 }
 
 // ---------- sound: chiptune effects and music, all synthesized with Web Audio (no files) ----------
 // Browsers only allow audio after a user gesture, so the context starts on the first tap or key press.
-const PREF = 'terraform-sound'; // per-viewer toggles, kept apart from the save
-const pref = { sfx: true, music: true };
+const PREF = 'terraform-sound'; // per-viewer toggles, kept apart from the save: sound, music, calm (reduced motion), big (large text)
+const pref = { sfx: true, music: true, calm: null, big: false }; // calm null = follow the system's reduced-motion setting
 try { Object.assign(pref, JSON.parse(localStorage.getItem(PREF)) || {}); } catch { /* storage blocked: defaults */ }
+const savePref = () => { try { localStorage.setItem(PREF, JSON.stringify(pref)); } catch { /* not remembered */ } };
+const calm = () => pref.calm ?? matchMedia('(prefers-reduced-motion: reduce)').matches;
 let AC, sfxBus, musicBus, noiseBuf;
 function audioOn() {
   if (AC) { if (AC.state === 'suspended' && !document.hidden) AC.resume(); return; }
@@ -892,8 +900,8 @@ let mStep = 0, mNext = 0;
 function startMusic() {
   mNext = AC.currentTime + .2;
   setInterval(() => {
-    if (AC.state !== 'running') return;
-    if (mNext < AC.currentTime) mNext = AC.currentTime + .05; // resumed after a pause: don't play the backlog
+    if (AC.state !== 'running' || !pref.music) return; // muted: schedule nothing
+    if (mNext < AC.currentTime) mNext = AC.currentTime + .05; // resumed after a pause or unmuted: don't play the backlog
     while (mNext < AC.currentTime + .35) { musicStep(mStep, mNext); mStep = (mStep + 1) % 64; mNext += STEP; }
   }, 100);
 }
@@ -905,28 +913,66 @@ function musicStep(s, t) {
   if (beat === 10 && Math.random() < .4) tone({ ...m, f: mtof(SPARK[Math.random() * SPARK.length | 0] + 12), type: 'sine', dur: STEP * 10, vol: .03, attack: .05, release: .8 }); // sparkle
 }
 
-// Music and sound toggles under the stat boxes (pixel icons; dimmed when off).
-const ICONS = {
-  music: tiny(['..wwwwww.', '..wwwwww.', '..w....w.', '..w....w.', '..w....w.', 'www..www.', 'www..www.', 'www..www.', '.........']),
-  sfx: tiny(['...w.....', '..ww..w..', 'www.w..w.', 'w...w.w.w', 'w...w.w.w', 'w...w.w.w', 'www.w..w.', '..ww..w..', '...w.....']),
-};
-const soundRow = document.createElement('div');
-soundRow.id = 'sound';
-for (const key of ['music', 'sfx']) {
-  const b = document.createElement('button');
-  b.innerHTML = `<img src="${ICONS[key].toDataURL()}" alt="">`;
-  const sync = () => { b.setAttribute('aria-pressed', pref[key]); b.setAttribute('aria-label', `${key === 'music' ? 'Music' : 'Sound effects'} ${pref[key] ? 'on' : 'off'}`); };
+// ---------- settings: toggles, save code, new game (gear button in the life box) ----------
+const GEAR = tiny(['...www...', '.w.wnw.w.', '.wwwnwww.', '.wn...nw.', 'www...www', '.wn...nw.', '.wwwnwww.', '.w.wnw.w.', '...www...']);
+$('gear').innerHTML = `<img src="${GEAR.toDataURL()}" alt="">`;
+const OPTS = [['music', 'Music'], ['sfx', 'Sound effects'], ['calm', 'Reduced motion'], ['big', 'Large text']];
+const applyPref = () => { document.documentElement.classList.toggle('big', pref.big); document.documentElement.classList.toggle('calm', calm()); setBuses(); };
+for (const [key, label] of OPTS) {
+  const row = document.createElement('div'), b = document.createElement('button');
+  row.className = 'srow'; row.append(label, b); b.className = 'tog';
+  const sync = () => { const on = key === 'calm' ? calm() : pref[key]; b.textContent = on ? 'ON' : 'OFF'; b.setAttribute('aria-pressed', on); b.setAttribute('aria-label', `${label} ${on ? 'on' : 'off'}`); };
   b.addEventListener('click', () => {
-    pref[key] = !pref[key]; sync(); audioOn(); setBuses();
-    try { localStorage.setItem(PREF, JSON.stringify(pref)); } catch { /* not remembered */ }
-    play('ui');
+    pref[key] = key === 'calm' ? !calm() : !pref[key];
+    sync(); savePref(); applyPref(); audioOn(); play('ui');
+    if (key === 'big') resize(); // the HUD changed size: re-fit the scene
   });
-  sync(); soundRow.append(b);
+  sync(); $('sopts').append(row);
 }
-$('side').append(soundRow);
+applyPref();
+let frozen = false; // true while a save is being replaced: the page's own autosave must not overwrite it
+const toCode = s => btoa(unescape(encodeURIComponent(s))), fromCode = c => decodeURIComponent(escape(atob(c.trim())));
+$('sexport').addEventListener('click', async () => {
+  save();
+  const code = toCode(localStorage.getItem(SAVE) || ''), ta = $('scode');
+  ta.value = code; ta.focus(); ta.select();
+  try { await navigator.clipboard.writeText(code); flashBtn($('sexport'), 'Copied'); } catch { flashBtn($('sexport'), 'Select and copy it'); }
+});
+$('simport').addEventListener('click', () => {
+  let d = null;
+  try { d = JSON.parse(fromCode($('scode').value)); } catch { /* not a code */ }
+  if (!validSave(d)) return flashBtn($('simport'), 'Not a valid code'), play('deny');
+  frozen = true;
+  try { localStorage.setItem(SAVE, JSON.stringify(d)); } catch { frozen = false; return flashBtn($('simport'), 'Storage blocked'); }
+  location.reload();
+});
+let armed = 0;
+$('snew').addEventListener('click', () => { // two taps within 4s: everything is erased, so one tap is not enough
+  if (!armed) { armed = setTimeout(() => { armed = 0; $('snew').textContent = 'New game'; $('snew').classList.remove('arm'); }, 4000); $('snew').textContent = 'Tap again to erase everything'; $('snew').classList.add('arm'); return; }
+  frozen = true;
+  location.href = location.pathname + '?reset';
+});
+function flashBtn(b, msg) { const was = b.textContent; b.textContent = msg; setTimeout(() => { b.textContent = was; }, 2000); }
+let setOpener = null;
+function openSettings() {
+  play('ui'); closePanel();
+  setOpener = document.activeElement;
+  $('settings').hidden = false; shield(true);
+  $('sclose').focus({ preventScroll: true });
+}
+function closeSettings() {
+  if ($('settings').hidden) return;
+  $('settings').hidden = true; shield(false);
+  if (setOpener?.isConnected && setOpener !== document.body) setOpener.focus({ preventScroll: true });
+}
+$('gear').addEventListener('click', openSettings);
+$('sclose').addEventListener('click', closeSettings);
 
 // ---------- hud / panel ----------
 const set = (el, html) => { if (el._h !== html) el.innerHTML = el._h = html; }; // skip needless DOM rewrites
+// Modal dialogs (talents, warp, settings) make everything else inert: unreachable by tap, keyboard or screen reader.
+const BEHIND = ['c', 'top', 'side', 'toast', 'bar', 'panel', 'prev', 'next', 'guide'];
+const shield = on => { for (const id of BEHIND) $(id).inert = on; };
 const tiles = SYS.map((sy, s) => {
   const b = document.createElement('button');
   b.className = 'tile';
@@ -1033,13 +1079,13 @@ function closePanel() {
   if (panel.hidden) return;
   sel = -1; panel.hidden = true; updateUI();
   if (opener?.isConnected && opener !== document.body) opener.focus({ preventScroll: true });
-  if (pendingToast) { toast(...pendingToast); pendingToast = null; }
+  if (toasts.length) toast(...toasts.shift());
 }
 $('pclose').addEventListener('click', closePanel);
 $('prev').addEventListener('click', () => openPanel((sel + SYS.length - 1) % SYS.length));
 $('next').addEventListener('click', () => openPanel((sel + 1) % SYS.length));
 addEventListener('keydown', e => {
-  if (e.key === 'Escape') { if (!$('talents').hidden) closeTalents(); else closePanel(); }
+  if (e.key === 'Escape') { if (!$('talents').hidden) closeTalents(); else if (!$('settings').hidden) closeSettings(); else closePanel(); }
   // 1-6 open a system's panel (not while a dialog is up or typing in a field)
   if (e.key >= '1' && e.key <= '6' && !e.ctrlKey && !e.metaKey && !e.altKey && !$('c').inert && !/TEXTAREA|INPUT/.test(e.target.tagName)) openPanel(+e.key - 1);
 });
@@ -1157,15 +1203,13 @@ function openTalents() {
   play('ui');
   closePanel();
   talOpener = document.activeElement;
-  $('talents').hidden = false;
-  for (const id of BEHIND_WARP) $(id).inert = true;
+  $('talents').hidden = false; shield(true);
   renderTal();
   talById[selTal].el.focus({ preventScroll: true });
 }
 function closeTalents() {
   if ($('talents').hidden) return;
-  $('talents').hidden = true;
-  for (const id of BEHIND_WARP) $(id).inert = false;
+  $('talents').hidden = true; shield(false);
   if (talOpener?.isConnected && talOpener !== document.body) talOpener.focus({ preventScroll: true });
 }
 $('tclose').addEventListener('click', closeTalents);
@@ -1175,13 +1219,14 @@ talTile.innerHTML = `<img src="${src(TI.sprout)}" alt="">`;
 talTile.addEventListener('click', openTalents);
 $('bar').append(talTile);
 
-let toastTimer, pendingToast = null;
+let toastTimer;
+const toasts = []; // queued while the panel hides them on phones; shown one after another on close
 function toast(msg, big) {
-  if (sel >= 0 && innerWidth < 900) { pendingToast = [msg, big]; return; } // phones hide toasts under the panel: show it on close
+  if (sel >= 0 && innerWidth < 900) { toasts.push([msg, big]); return; }
   const el = $('toast');
   el.textContent = msg; el.classList.add('show'); el.classList.toggle('big', !!big);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 6000);
+  toastTimer = setTimeout(() => { el.classList.remove('show'); if (toasts.length) toast(...toasts.shift()); }, 6000);
 }
 
 $('goal').addEventListener('click', () => {
@@ -1207,22 +1252,18 @@ function openWarp() {
     ? `All ${WORLDS.length} worlds are alive. Best times: ${WORLDS.map(w => `${w.name} ${mmss(S.best[w.name] ?? 0)}`).join(', ')}. ${S.taps} taps in all. Cycle ${roman(n / WORLDS.length + 1)} starts back at ${next}, with all output x${mult} forever.`
     : `${world().name} is alive. Took ${mmss(S.best[world().name])}. Next stop: ${next}, with all output x${mult} forever. You also earn a Star Seed to spend on Talents.`;
   $('warpbtn').textContent = end ? `Begin cycle ${roman(n / WORLDS.length + 1)} >>` : 'Warp to next world >>';
-  closePanel(); closeTalents();
-  $('warp').hidden = false;
-  for (const id of BEHIND_WARP) $(id).inert = true; // modal: nothing behind the dialog is reachable
+  closePanel(); closeTalents(); closeSettings();
+  $('warp').hidden = false; shield(true);
   $('warpbtn').focus();
 }
 $('warpstay').addEventListener('click', () => { // admire the living planet; the goal bar keeps the warp ready
-  $('warp').hidden = true; play('ui');
-  for (const id of BEHIND_WARP) $(id).inert = false;
+  $('warp').hidden = true; shield(false); play('ui');
   $('goal').focus({ preventScroll: true });
 });
 
 // Start a fresh dead world: everything resets except the permanent warp boost.
-const BEHIND_WARP = ['c', 'top', 'side', 'toast', 'bar', 'panel', 'prev', 'next', 'guide'];
 function warp() {
-  $('warp').hidden = true; play('warp');
-  for (const id of BEHIND_WARP) $(id).inert = false;
+  $('warp').hidden = true; shield(false); play('warp');
   tiles[0].focus({ preventScroll: true });
   Object.assign(S, { world: S.world + 1, life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: S.seeds + 1 });
   if (has('seedbank')) S.life = 1000 * boost();
@@ -1387,6 +1428,7 @@ function updateGuide() {
 const SAVE = 'terraform-save-v1', awayCap = () => (has('sleep') ? 24 : 12) * 3600; // offline time counted, in seconds
 const syncStage = () => { stage = STAGES.filter(s => healOf(S.earned) >= s.at).length; }; // no milestone pop-ups for old progress
 function save() {
+  if (frozen) return;
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
@@ -1417,7 +1459,7 @@ function load() {
     try { if (raw) localStorage.setItem(SAVE + '-bad', raw); } catch { /* ignore */ } // keep an unreadable save instead of letting the next autosave erase it
     return false;
   }
-  const v = d.S;
+  const v = d.S, prev = S.world;
   Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world,
     on: v.on, L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0), done: v.done ?? false, best: v.best ?? {},
     seeds: v.seeds ?? v.world, tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
@@ -1426,7 +1468,7 @@ function load() {
   if (W && SYS.map(sy => sy.id).join() !== was) resize(); // another tab warped meanwhile
   items.length = 0;
   if (Array.isArray(d.items)) for (const p of d.items) if (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])) items.push({ u: p[0], v: p[1], born: -9 });
-  buildWorld();
+  if (S.world !== prev) buildWorld(); // same world (every tab return): keep the textures, only the patches changed
   away(d.t);
   return true;
 }
@@ -1483,18 +1525,23 @@ function tapPlanet(x, y) {
 
 // ---------- loop ----------
 let uiTick = 0, resume = true, panelH = 0, autoT = 0, paidAt = 0; // resume: skip one income gap after a hidden tab (away() already paid it)
-function frame(ms) {
+let errors = 0;
+function frame(ms) { // one bad frame must not stop the game: log it and keep going
+  try { step(ms); } catch (e) { if (errors++ < 5) console.error(e); }
+  requestAnimationFrame(frame);
+}
+function step(ms) {
   const t = ms / 1000, dt = resume ? 0 : Math.max(0, Math.min(.1, t - last)), now = Date.now();
   // income runs on the wall clock: browsers also pause animation frames without hiding the tab (screen lock,
   // covered window), and that time must still pay. Long pauses are paid like time away (capped, with a toast).
   const gap = resume ? 0 : Math.max(0, (now - paidAt) / 1000);
   last = t; paidAt = now; resume = false;
-  if (!W) return requestAnimationFrame(frame); // no layout yet (0-size viewport)
+  if (!W) return; // no layout yet (0-size viewport)
   if (gap >= 30) away(now - gap * 1000);
   else { const g = rateOf() * gap; S.life += g; S.earned += g; }
   const heal = healOf(S.earned);
   off = (off + dt * 6) % TW;
-  shake = Math.max(0, shake - dt * 3); flash = Math.max(0, flash - dt * 1.2);
+  shake = calm() ? 0 : Math.max(0, shake - dt * 3); flash = Math.max(0, flash - dt * 1.2);
   if (heal >= 1 && !S.done) showWarp();
   const aps = has('autotap2') ? 4 : has('autotap') ? 1 : 0; // Tap Bot / Tap Swarm: automatic taps per second
   if (aps && (autoT += dt * aps) >= 1) { autoT -= 1; tapSomewhere(); }
@@ -1525,7 +1572,6 @@ function frame(ms) {
 
   draw(t, heal);
   if ((uiTick += dt) > .1) { uiTick = 0; updateUI(); }
-  requestAnimationFrame(frame);
 }
 
 if (new URLSearchParams(location.search).has('reset')) { // ?reset: start over (demos, judges); runs after the old page saved on its way out
