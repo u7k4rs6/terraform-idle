@@ -55,12 +55,11 @@ html.embed #ttile { right: auto; left: calc(12px + env(safe-area-inset-left)); }
 #panel { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(560px, 100%); max-height: 56vh; display: flex; flex-direction: column; background: var(--deep); border-top: 2px solid var(--pink); padding-bottom: env(safe-area-inset-bottom); }
 #phead { flex: none; } /* the heading and X stay put */
 #pbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; } /* only the upgrades and the fact scroll */
-#panel[hidden], .arrow[hidden], .row[hidden] { display: none; }
+#panel[hidden], .row[hidden] { display: none; }
 #phead { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 6px solid var(--bg); }
 #pname { font-weight: normal; font-size: 1.2rem; }
 #pinfo { flex: 1; text-align: right; color: var(--soft); }
 #pclose { width: 36px; height: 36px; background: var(--soft); color: var(--deep); }
-#pmul { min-width: 48px; height: 36px; padding: 0 8px; border: 2px solid var(--soft); color: var(--soft); } /* x1 / x10 / MAX levels per purchase */
 .row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
 .row + .row { border-top: 2px solid var(--bg); }
 .rt { flex: 1; }
@@ -73,9 +72,8 @@ html.embed #ttile { right: auto; left: calc(12px + env(safe-area-inset-left)); }
 .buy span { display: block; margin-top: 4px; }
 .fact { padding: 4px 16px 14px; font-size: .85rem; color: var(--soft); }
 .fact:empty { display: none; }
-.arrow { position: fixed; width: 44px; height: 76px; background: var(--deep); font-size: 1.5rem; }
-#prev { left: env(safe-area-inset-left); }
-#next { right: env(safe-area-inset-right); }
+.arrow { width: 32px; height: 36px; flex: none; border: 2px solid var(--dim); color: var(--soft); font-size: 1.2rem; } /* < > step between systems, beside the name */
+#phead { gap: 8px; }
 
 /* commander: portrait + speech bubble, bottom left; only the bubble and skip take taps */
 #guide { position: fixed; left: calc(8px + env(safe-area-inset-left)); display: flex; align-items: flex-end; gap: 6px; pointer-events: none; }
@@ -182,8 +180,3 @@ html.cine #gface, html.cine #gskip { display: none; }
 #cineskip[hidden] { display: none; }
 html.cine #gbubble::before { display: none; }
 html.cine #gbubble { width: min(420px, calc(100vw - 32px)); }
-/* auto-buy: switch in the panel header, an A on the tile while it runs */
-#pauto { height: 36px; padding: 0 8px; border: 2px solid var(--soft); color: var(--soft); }
-#pauto[hidden] { display: none; }
-#pauto[aria-pressed="true"] { background: var(--pink); border-color: var(--pink); color: var(--deep); }
-.tile.auto::before { content: "A"; position: absolute; left: 3px; top: 0; font-size: .7rem; color: var(--pink); }
