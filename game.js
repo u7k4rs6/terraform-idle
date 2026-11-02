@@ -1996,6 +1996,25 @@ function step(ms) {
   if ((uiTick += dt) > .1) { uiTick = 0; updateUI(); }
 }
 
+// Self-checks for the gameplay rules, run once on the default state (before the save loads) and fully restored afterwards.
+(() => {
+  const keep = JSON.stringify(S), was = { bulk, combo, crateWait };
+  try {
+    Object.assign(S, { on: [true, false, false, false, false, false], life: 1e12 });
+    bulk = 1; console.assert(bulkOf(0, 1)[0] === 1 && bulkOf(0, 1)[1] === price(0, 1), 'bulk x1');
+    bulk = 10; console.assert(bulkOf(0, 1)[0] === 10 && bulkOf(0, 1)[1] === [...Array(10).keys()].reduce((a, l) => a + price(0, 1, l), 0), 'bulk x10');
+    bulk = 0; S.life = price(0, 1, 0) + price(0, 1, 1); console.assert(bulkOf(0, 1)[0] === 2, 'bulk MAX buys what you can afford');
+    S.life = 0; console.assert(bulkOf(0, 1)[0] === 1, 'bulk MAX always shows at least one level');
+    console.assert([9, 10, 24, 25].map(n => (combo = n, comboMul())).join() === '1,2,2,3', 'combo tiers');
+    const base = { tap: tapGain(), price: price(0, 1), goal: goalOf(), out: sysOut(0) }, ratio = (id, f) => (S.boon = id, f());
+    console.assert(ratio('hands', tapGain) === base.tap * 3 && ratio('short', goalOf) === base.goal * .75 && ratio('summer', () => sysOut(0)) === base.out * 1.5
+      && ratio('bulk', () => price(0, 1)) === Math.ceil(ucost(0, 1, 0) * .8) && ratio('', () => price(0, 1)) === base.price, 'boon multipliers');
+    console.assert(/^\d{4}-\d{2}-\d{2}$/.test(today()), 'daily date format');
+    Object.assign(S, { intro: true, daily: today() }); crateWait = 0; stepCrate(1); console.assert(!crate, 'one supply drop per day');
+    console.assert(CONTRACTS[0]()?.text === `Unlock the ${SYS[1].name}`, 'contract: unlock the next system');
+    S.on = SYS.map(() => true); console.assert(CONTRACTS[0]() === null, 'contract: nothing left to unlock');
+  } finally { Object.assign(S, JSON.parse(keep)); ({ bulk, combo, crateWait } = was); crate = null; }
+})();
 if (new URLSearchParams(location.search).has('reset')) { // ?reset: start over (demos, judges); runs after the old page saved on its way out
   try { localStorage.removeItem(SAVE); } catch { /* storage blocked: nothing saved anyway */ }
   history.replaceState(null, '', location.pathname); // a later reload keeps the new game
