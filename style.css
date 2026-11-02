@@ -166,3 +166,10 @@ html.calm #guide.talk #gface { animation: none; } /* reduced motion: the command
 .boon small { display: block; font-size: .85rem; color: var(--soft); }
 .boon:hover, .boon:focus-visible { background: #4a3043; }
 #warp .box { max-height: calc(100vh - 32px); overflow-y: auto; }
+/* contract strip: outside the layout (no scene re-fit when it comes and goes); top is set in layout() */
+#contract { position: fixed; right: calc(16px + env(safe-area-inset-right)); width: min(300px, calc(100vw - 32px)); padding: 6px 10px; background: var(--deep); border: 2px solid #ffe08a; font-size: .85rem; pointer-events: none; }
+#contract[hidden] { display: none; }
+#contract b { font-weight: normal; color: #ffe08a; margin-right: 4px; }
+#contract span { color: var(--soft); white-space: nowrap; }
+@media (max-width: 899px) { #contract { left: calc(16px + env(safe-area-inset-left)); right: auto; } } /* under the stat boxes */
+@media (max-width: 639px) { #contract { right: 16px; width: auto; } }

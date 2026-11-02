@@ -30,7 +30,7 @@ const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 
 // seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done;
 // done: this world is at 100% (the warp is waiting); best: fastest time to heal each world, by name
 // ach: achievement ids earned; n: lifetime counters the achievements watch (crits, comets caught, taps in meteor showers, longest time away in s)
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0 }, daily: '', boon: '' }; // boon: the warp boon active on this world // daily: local date of the last supply drop opened
+const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0 }, daily: '', boon: '' }; // boon: the warp boon active on this world // daily: local date of the last supply drop opened
 console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
 const has = id => S.tal.includes(id);
 const boost = () => (has('echo') ? 2.5 : 2) ** S.world; // every world you finish multiplies all output for good
@@ -531,6 +531,7 @@ function layout() {
   $('side').style.top = top * PX + 12 + 'px';
   const sr = $('side').getBoundingClientRect();
   $('toast').style.top = (innerWidth < 640 ? sr.bottom + 10 : top * PX + 12) + 'px'; // phones: under the stat boxes, full width
+  $('contract').style.top = (innerWidth < 900 ? sr.bottom + 10 : 14) + 'px'; // phones/tablets: under the stats; wide: top-right corner
   TOP = top + 4; SIDE = { r: sr.right / PX, b: sr.bottom / PX };
   GY = Math.round(H - bar - 14); // ground line
   // planet as big as fits: the outer ground systems (GX, wider than the ring's cos 30° x ORBIT) plus a sprite half-width across,
@@ -1021,6 +1022,7 @@ const ACH = [
   ['combo', 'Combo Master', 'Chain 25 taps in a row.', () => S.n.combo >= 25],
   ['crate', 'Supply Run', 'Open a daily supply drop.', () => S.n.crates > 0],
   ['moonie', 'Moonstruck', 'Find out what happens when you tap the moon.', () => S.n.moon > 0],
+  ['contract', 'Contractor', 'Complete 5 contracts for the Commander.', () => S.n.contracts >= 5],
 ].map(([id, name, desc, test]) => ({ id, name, desc, test }));
 function checkAch() { // 10x a second from updateUI; each test is a few comparisons
   for (const a of ACH) if (!S.ach.includes(a.id) && a.test()) { S.ach.push(a.id); toast(`ACHIEVEMENT: ${a.name}. ${a.desc}`, true); play('talent'); }
@@ -1144,6 +1146,10 @@ function updateUI() {
   });
   talTile.classList.toggle('ok', S.seeds > 0 && TAL.some(canTal));
   checkAch();
+  const cs = $('contract'); cs.hidden = !contract;
+  const left = Math.ceil(contract?.t ?? 0);
+  if (contract) set(cs, `<b>CONTRACT ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</b> ${contract.text} <span>${ICON}${fmt(contract.reward)}</span>`);
+  if (innerWidth < 640) $('toast').style.top = (SIDE.b * PX + 10 + (contract ? cs.offsetHeight + 6 : 0)) + 'px'; // phones: toasts step below the contract
   updateGuide();
   if (W && hudH() !== layoutH) resize(); // goal text wrapped or the HUD changed size: re-fit the scene below it
 
@@ -1417,6 +1423,7 @@ function warp(boon = '') {
   setLoadout(S.world); resize(); // ground systems change size: re-fit the colony around them
   const fresh = SYS.filter(sy => !before.includes(sy.id)).map(sy => sy.name);
   items.length = shots.length = 0;
+  contract = null; conNext = 60; // a fresh world, a fresh job board
   stage = 0; zoom = .3; flash = 1; shake = 1; // arrive from far away
   buildWorld();
   guide([ // arrival briefing
@@ -1558,6 +1565,7 @@ const QUIPS = {
   combo: ['Look at those hands go!', 'Twenty-five in a row. Remind me never to arm-wrestle you.'],
   crate: ['Supply drop from HQ. Courtesy of the Corps.', 'Fresh supplies. Do not spend it all in one place.'],
   moon: ['Stop poking the moon, Engineer. ...Fine, one more.', 'The moon says hello.'],
+  paid: ['Contract done. HQ pays on time, for once.', 'Clean work. The bonus is in your account.'],
 };
 function sayLine() { // type the line out, a few letters per tick, the portrait bobbing while it talks
   const full = val(gLines[gi].text);
@@ -1643,7 +1651,7 @@ function load() {
   const v = d.S, prev = S.world;
   Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world,
     on: v.on, L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0), done: v.done ?? false, best: v.best ?? {}, boon: v.boon ?? '',
-    ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, ...(v.n || {}) }, daily: v.daily ?? '',
+    ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0, ...(v.n || {}) }, daily: v.daily ?? '',
     seeds: v.seeds ?? v.world, tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
   const was = SYS.map(sy => sy.id).join();
   setLoadout(S.world);
@@ -1762,6 +1770,30 @@ function stepEvents(dt) {
   if (comet) comet.x += comet.vx * dt;
 }
 
+// ---------- contracts: optional timed side jobs from the Commander, built from where the player is right now ----------
+let contract = null, conNext = 60; // conNext: seconds of play until the next offer
+const CONTRACTS = [ // each returns a contract { text, secs, done } or null when it does not fit the moment
+  () => { const s = S.on.indexOf(false); return s > 0 && unlocked(s) ? { text: `Unlock the ${SYS[s].name}`, secs: 180, done: () => S.on[s] } : null; },
+  () => { const top = Math.max(...S.L.flat()), n = Math.min(MAXL, top + 5); return top < MAXL ? { text: `Get any upgrade to Lv ${n}`, secs: 120, done: () => Math.max(...S.L.flat()) >= n } : null; },
+  () => ({ text: 'Chain a 15-tap combo', secs: 60, done: () => combo >= 15 }),
+  () => { const from = S.earned, n = Math.max(500, rateOf() * 130); return { text: `Earn ${fmt(n)} life`, secs: 90, done: () => S.earned - from >= n }; },
+];
+function stepContract(dt) {
+  if (contract) {
+    if (contract.done()) { // paid: about 3 minutes of income
+      S.life += contract.reward; S.earned += contract.reward; S.n.contracts++;
+      toast(`CONTRACT DONE: ${contract.text}. +${fmt(contract.reward)} life.`, true); play('coin'); buzz(20); quip(QUIPS.paid);
+      contract = null; conNext = 90;
+    } else if ((contract.t -= dt) <= 0) { toast(`Contract expired: ${contract.text}.`); contract = null; conNext = 90; }
+    return;
+  }
+  if (!S.intro || !S.on[0] || S.done || $('c').inert || (conNext -= dt) > 0) return;
+  const options = CONTRACTS.map(f => f()).filter(Boolean);
+  contract = { ...options[Math.random() * options.length | 0], reward: Math.max(300, rateOf() * 180) };
+  contract.t = contract.secs;
+  play('ui'); quip(`New contract: ${contract.text}. You have ${mmss(contract.secs)}. Optional, but HQ pays well.`);
+}
+
 // ---------- daily supply drop: once per calendar day a crate parachutes into the sky and waits to be tapped ----------
 const today = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
 let crate = null, crateWait = 8; // crate: { side: -1 | 1, k: 0..1 descent }; first drop comes a few seconds into a session
@@ -1832,7 +1864,7 @@ function step(ms) {
 
   const reached = STAGES.filter(s => heal >= s.at).length;
   if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); shake = .8; play('milestone'); if (stage === 2) quip(QUIPS.half); }
-  stepEvents(dt); stepLife(dt, heal); stepCrate(dt);
+  stepEvents(dt); stepLife(dt, heal); stepCrate(dt); stepContract(dt);
   zoom += (1 - zoom) * Math.min(1, dt * 1.5);
   R = Math.round(R0 * zoom);
 
