@@ -47,7 +47,7 @@ html.calm #goal.ready { animation: none; }
 #wtime { color: var(--soft); font-variant-numeric: tabular-nums; }
 #wtrait { display: block; color: var(--soft); font-size: .8rem; } /* the world's trait, under its name */
 #wtrait:empty { display: none; }
-#healtxt { color: var(--soft); text-align: right; }
+#healtxt { color: var(--soft); text-align: right; white-space: nowrap; }
 #bar { position: relative; display: flex; justify-content: center; gap: 8px; padding: 8px 12px calc(12px + env(safe-area-inset-bottom)); }
 .tile { position: relative; flex: 1 1 0; max-width: 64px; height: 58px; background: var(--bg); display: grid; place-items: center; }
 .tile img { image-rendering: pixelated; max-width: 100%; max-height: 46px; } /* shrink only when a tile is narrower than the icon */

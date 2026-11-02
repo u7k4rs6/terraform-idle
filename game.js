@@ -180,184 +180,259 @@ function grit(src, seed, light) {
 }
 const diagLight = (x, y, w, h) => 1 - (x / w + y / h) / 2; // sun from the top-left
 
-// Hand-drawn line-art for the six systems (native resolution, 1px lines).
+// ---------- machines: painted in materials, then shaded ----------
+// Each machine is drawn with material inks (H hull, S trim, X special such as lava or plasma: per machine; M metal, D dark metal,
+// K near-black, G glass, R rock, W white-hot, A glowing accent: shared). shade() turns each material into a five-tone ramp
+// with bevels (lit top-left edges, dark bottom-right), dither and noise. A keeps the palette's exact accent pair, so recolour()
+// can repaint it for each Mark.
+const INK = { H: '#ff0000', S: '#00ff00', X: '#0000ff', M: '#ffff00', D: '#ff00ff', K: '#00ffff', G: '#800000', R: '#008000', W: '#000080', A: '#808000' };
+const INK_OF = Object.fromEntries(Object.entries(INK).map(([m, h]) => [rgb(h).join(), m]));
+const MAT = { M: '#a7adb9', D: '#4c5262', K: '#262a34', G: '#7fc4e6', R: '#8e7d6c', W: '#fff6e0' };
+function mpen(g) { // whole-pixel shapes only (no anti-aliasing), so every pixel keeps its exact ink
+  const put = (x, y, w, h, m) => { g.fillStyle = INK[m]; g.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h))); };
+  const p = {
+    rect: (x, y, w, h, m) => put(x, y, w, h, m),
+    dot: (x, y, m) => put(x, y, 1, 1, m),
+    line(x0, y0, x1, y1, m) {
+      x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+      const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+      for (let e = dx + dy; ; ) {
+        put(x0, y0, 1, 1, m);
+        if (x0 === x1 && y0 === y1) break;
+        const e2 = 2 * e;
+        if (e2 >= dy) { e += dy; x0 += sx; }
+        if (e2 <= dx) { e += dx; y0 += sy; }
+      }
+    },
+    oval(cx, cy, rx, ry, m, top = false) { // filled ellipse (top: upper half only)
+      for (let dy = -ry; dy <= (top ? 0 : ry); dy++) { const dx = Math.round(rx * Math.sqrt(Math.max(0, 1 - (dy / (ry + .5)) ** 2))); put(cx - dx, cy + dy, dx * 2 + 1, 1, m); }
+    },
+    circ: (cx, cy, r, m, top) => p.oval(cx, cy, r, r, m, top),
+    arc(cx, cy, rx, ry, from, to, m) { // 1px elliptical arc
+      const n = Math.ceil((rx + ry) * 3);
+      for (let i = 0; i <= n; i++) { const a = from + (to - from) * i / n; put(cx + Math.cos(a) * rx, cy + Math.sin(a) * ry, 1, 1, m); }
+    },
+    poly(pts, m) { // scanline fill, sampled at pixel centres
+      const ys = pts.map(q => q[1]);
+      for (let y = Math.floor(Math.min(...ys)); y <= Math.ceil(Math.max(...ys)); y++) {
+        const yc = y + .5, xs = [];
+        pts.forEach(([x0, y0], i) => { const [x1, y1] = pts[(i + 1) % pts.length]; if ((y0 <= yc) !== (y1 <= yc)) xs.push(x0 + (yc - y0) / (y1 - y0) * (x1 - x0)); });
+        xs.sort((a, b) => a - b);
+        for (let k = 0; k + 1 < xs.length; k += 2) { const a = Math.round(xs[k]), b = Math.round(xs[k + 1]); if (b > a) put(a, y, b - a, 1, m); }
+      }
+    },
+    rot(ox, oy, a, k = 1) { // the same shapes in a rotated, scaled local frame
+      const c = Math.cos(a) * k, s = Math.sin(a) * k, T = (x, y) => [ox + x * c - y * s, oy + x * s + y * c];
+      return {
+        poly: (pts, m) => p.poly(pts.map(q => T(...q)), m),
+        rect(x, y, w, h, m) { this.poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], m); },
+        seg: (x0, y0, x1, y1, m) => p.line(...T(x0, y0), ...T(x1, y1), m),
+        dot: (x, y, m) => p.dot(...T(x, y), m),
+      };
+    },
+  };
+  return p;
+}
+const paint = (w, h, fn) => { const c = mk(w, h); fn(mpen(c.getContext('2d', { willReadFrequently: true }))); return c; };
+const ramp = h => { const b = rgb(h), mix = (t, k) => b.map((v, i) => Math.round(v + (t[i] - v) * k)); const W3 = [255, 255, 255], K3 = [8, 10, 18];
+  return [mix(W3, .5), mix(W3, .22), b, mix(K3, .32), mix(K3, .58)]; };
+function shade(src, pal, seed) {
+  const w = src.width, h = src.height, d = src.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data, c = mk(w, h), g = c.getContext('2d'), im = g.createImageData(w, h), o = im.data;
+  const mat = new Array(w * h).fill(null);
+  for (let i = 0; i < w * h; i++) if (d[i * 4 + 3]) mat[i] = INK_OF[`${d[i * 4]},${d[i * 4 + 1]},${d[i * 4 + 2]}`] || null;
+  const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? null : mat[y * w + x]);
+  const R = { ...Object.fromEntries(Object.entries(MAT).map(([m, hx]) => [m, ramp(hx)])), H: ramp(pal.H), S: ramp(pal.S || '#e8e2d6'), X: ramp(pal.X || '#ffb547') };
+  const AL = rgb(C.accL), AD = rgb(C.accD);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const m = at(x, y); if (!m) continue;
+    const L = diagLight(x, y, w, h), th = B4[y & 3][x & 3] / 16, n = hash(x, y, seed), j = (y * w + x) * 4;
+    let col;
+    if (m === 'A') col = L + (n - .5) * .4 > th * .8 ? AL : AD;
+    else {
+      const up = at(x, y - 1) !== m, lf = at(x - 1, y) !== m, dn = at(x, y + 1) !== m, rt = at(x + 1, y) !== m;
+      let t = 2 - Math.round((L - .5) * 2.2 + (th - .5) * .9 + (n - .5) * .35);
+      if ((up || lf) && !(dn || rt)) t = Math.min(t, 1) - (up && lf ? 1 : 0); // lit edge
+      else if ((dn || rt) && !(up || lf)) t = Math.max(t, 3) + (dn && rt ? 1 : 0); // shadow edge
+      if (m === 'G' && (x + y * 2) % 9 === 0) t = 0; // glass glint
+      if (m === 'X' || m === 'W') t = Math.min(t, 2); // glowing materials stay bright
+      col = R[m][Math.max(0, Math.min(4, t))];
+    }
+    o[j] = col[0]; o[j + 1] = col[1]; o[j + 2] = col[2]; o[j + 3] = 255;
+  }
+  g.putImageData(im, 0, 0);
+  return c;
+}
+
 // Where shots leave each sprite, relative to its centre (default: the centre).
-const MUZZLE = { laser: [-30, 16], striker: [-28, 16], coil: [0, 19], asteroid: [24, 15], volcano: [0, -8], forge: [8, -16], antimatter: [0, -7],
-  lance: [-30, 18], ion: [0, 14], pod: [10, 2], driver: [11, -12], hydro: [14, -13], star: [0, -2] }; // laser/striker: the tip, local (-25|-26, 0) rotated and scaled
+const MUZZLE = { laser: [-30, 16], striker: [-29, 16], coil: [0, 19], asteroid: [25, 14], volcano: [6, 10], forge: [8, -16], antimatter: [0, -5],
+  lance: [-30, 17], ion: [0, 15], pod: [10, 2], driver: [11, -12], hydro: [14, -13], star: [0, -1] }; // cannons: the tip, local (-25|-26, 0) rotated and scaled
+// Each machine's own colours: H hull, S trim, X its special material.
+const PAL = {
+  laser: { H: '#d8434e', S: '#efe6da', X: '#ff8a8a' }, striker: { H: '#66789a', S: '#e8892e' }, lance: { H: '#b84a9c', S: '#4a2a5e', X: '#d49cff' },
+  solar: { H: '#d9a441', S: '#3a5fae' }, coil: { H: '#6457d0', S: '#d08a46', X: '#9fe8ff' }, ion: { H: '#e3e7ee', S: '#2fa8d4', X: '#8fe6ff' },
+  drone: { H: '#5aa64c', S: '#e9e3c8' }, asteroid: { H: '#e0b034', S: '#2b2e36' }, pod: { H: '#72883c', S: '#e6c840', X: '#a6ec5c' },
+  rocket: { H: '#efebe3', S: '#cc453b' }, volcano: { H: '#e07a2c', S: '#2b2e36', X: '#ff8a2a' }, driver: { H: '#4d78b8', S: '#efebe3' },
+  bio: { H: '#e6e1d3', S: '#4caf62', X: '#3f9e46' }, forge: { H: '#a95c36', S: '#e9e3d6', X: '#ff9a4a' }, hydro: { H: '#2f98b4', S: '#e9e3d6', X: '#6fd4ff' },
+  core: { H: '#2aa89c', S: '#e8c25a' }, antimatter: { H: '#5b3f92', S: '#b46cff', X: '#efe2ff' }, star: { H: '#c99a2e', S: '#8d5a22', X: '#ffd85a' },
+};
 const ART = {
-  // long drill-cannon angled down-left at the planet: slot panel, vent ribs, rear cap, tapered nose, needle nozzle, battery packs
-  laser: art(64, 42, p => {
-    const r = p.rot(32, 21, -.5, 1.35); // local +x points up-right (toward the rear), -x toward the planet
-    r.rect(-6, 7, 8, 4); r.rect(5, 7, 8, 4); // battery packs under the body
-    for (const x of [-3, 0, 8, 11]) r.seg(x, 8, x, 10, C.dim);
-    r.seg(-2, 6, -2, 7); r.seg(9, 6, 9, 7);
-    r.poly([[-8, -5], [-14, -3], [-14, 3], [-8, 5]]); // tapered front
-    r.rect(-8, -6, 24, 12); // main body
-    r.rect(16, -7, 3, 14); // rear cap
-    r.rect(-5, -3, 18, 6); for (const x of [-3, 2, 7]) r.rect(x, -1, 3, 2, MK); // slot panel
-    for (let x = -4; x < 14; x += 4) r.seg(x, -6, x + 2, -4); // vent ribs
-    r.rect(-13, -2, 3, 4); // nose panel
-    r.seg(-14, -1, -23, -1); r.seg(-14, 1, -23, 1); r.seg(-18, -2, -18, 2); // needle nozzle
-    r.dot(-24, 0, MK); r.dot(-25, 0, MK);
+  // orbital laser angled down-left at the planet: red hull with heat-sink fins, energy cells, a white stripe, a glass lens
+  laser: paint(64, 42, p => {
+    const r = p.rot(32, 21, -.5, 1.35); // local +x toward the rear (up-right), -x toward the planet
+    r.rect(14, -5, 4, 10, 'D'); r.rect(18, -3, 2, 6, 'A'); // engine block and its glow
+    for (const x of [-4, 0, 4, 8]) r.rect(x, -9, 2, 3, 'M'); // heat-sink fins
+    r.poly([[-9, -6], [14, -7], [14, 7], [-9, 6]], 'H'); // body
+    r.rect(-7, 2, 19, 2, 'S'); // stripe
+    for (const x of [-4, 1, 6]) r.rect(x, -3, 3, 2, 'A'); // energy cells
+    r.rect(-15, -3, 6, 6, 'M'); r.rect(-22, -2, 7, 4, 'D'); r.rect(-19, -3, 2, 6, 'M'); // neck, barrel and its collar
+    r.poly([[-22, -3], [-25, -2], [-25, 2], [-22, 3]], 'G'); r.dot(-26, 0, 'W'); // lens
   }),
-  // satellite: monitor head with a little face, brick-grid panels, striped body, dangling cables
-  solar: art(56, 32, p => {
-    for (const x0 of [0, 41]) {
-      p.box(x0, 3, 15, 8); p.line(x0 + 1, 7, x0 + 13, 7);
-      for (let k = 3; k < 14; k += 3) p.line(x0 + k, 4, x0 + k, 6);
-      for (let k = 2; k < 14; k += 3) p.line(x0 + k, 8, x0 + k, 9);
-    }
-    p.line(15, 6, 22, 6); p.line(34, 6, 40, 6); // arms
-    p.box(22, 0, 12, 10); p.box(24, 2, 8, 6); p.dot(26, 4, MK); p.dot(29, 4, MK); p.line(26, 6, 29, 6, C.dim); // monitor head
-    p.box(23, 9, 10, 14); for (let x = 25; x < 32; x += 2) p.line(x, 10, x, 21, C.dim); // striped body
-    [4, 7, 3, 8, 5].forEach((len, k) => p.line(24 + k * 2, 23, 24 + k * 2, 23 + len)); // dangling cables
-  }),
-  // drone rig: perforated hover slab, braced machine with a gear, debris flying off
-  drone: art(44, 34, p => {
-    const sy = 24, sh = 9;
-    for (let k = 0; k < sh; k++) { // rounded slab
-      const inset = k === 0 || k === sh - 1 ? 2 : k === 1 || k === sh - 2 ? 1 : 0;
-      p.fill(1 + inset, sy + k, 42 - 2 * inset, 1, C.bg); p.dot(1 + inset, sy + k); p.dot(42 - inset, sy + k);
-    }
-    p.fill(3, sy, 38, 1, C.line); p.fill(3, sy + sh - 1, 38, 1, C.line);
-    for (const [hx, hy, hr] of [[7, 28, 2], [13, 30, 1], [19, 27, 2], [26, 30, 1], [32, 28, 2], [38, 30, 1]]) p.disc(hx, hy, hr);
-    p.line(12, 22, 12, 23); p.line(24, 22, 24, 23); // struts
-    p.box(9, 8, 17, 15); p.line(10, 9, 24, 21, C.dim); p.line(24, 9, 10, 21, C.dim); // braced frame
-    p.box(13, 12, 9, 7); p.fill(15, 14, 5, 3, MK); // core
-    p.box(12, 3, 6, 6); p.line(15, 0, 15, 2); // vent stack
-    p.disc(32, 14, 5); p.disc(32, 14, 2);
-    for (let i = 0; i < 16; i += 2) { const a = i / 16 * 2 * Math.PI; p.dot(32 + Math.cos(a) * 7, 14 + Math.sin(a) * 7); } // dotted gear rim
-    p.fill(39, 5, 2, 2, C.line); p.fill(42, 9, 2, 2, C.line); p.dot(38, 1); p.dot(43, 3); p.dot(40, 12); // debris
-  }),
-  rocket: art(30, 36, p => {
-    p.box(2, 4, 6, 26); for (let y = 6; y < 26; y += 5) { p.line(3, y, 6, y + 4); p.line(6, y, 3, y + 4); } // braced gantry
-    p.line(8, 10, 12, 10); p.line(8, 19, 12, 19); // arms
-    for (let y = 2; y <= 8; y++) { const hw = (y - 2) >> 1; p.fill(16 - hw, y, hw * 2 + 1, 1); } // nose fill
-    p.line(16, 2, 13, 8); p.line(16, 2, 19, 8); // nose
-    p.fill(14, 8, 5, 18); p.line(13, 8, 13, 25); p.line(19, 8, 19, 25); p.line(13, 25, 19, 25); // body
-    p.disc(16, 13, 2, MK); p.line(14, 19, 18, 19, C.dim);
-    p.line(13, 20, 10, 25); p.line(19, 20, 22, 25); p.line(10, 25, 13, 25); p.line(19, 25, 22, 25); // fins
-    p.fill(15, 26, 3, 2, MK); // exhaust glow
-    p.box(0, 29, 30, 7); p.line(3, 32, 26, 32, C.dim); // launch pad
-  }),
-  bio: art(32, 26, p => {
-    p.disc(16, 17, 13, C.bg, true); // greenhouse dome
-    for (const x of [9, 16, 23]) p.line(x, 17 - Math.round(Math.sqrt(169 - (x - 16) ** 2)) + 1, x, 16, C.dim); // ribs
-    for (const x of [12, 20]) { p.line(x, 16, x, 12, MK); p.dot(x - 1, 13, MK); p.dot(x + 1, 14, MK); } // sprouts
-    p.box(1, 17, 30, 9); p.box(4, 19, 4, 4); p.box(24, 19, 4, 4); p.fill(11, 20, 10, 2, MK); // base
-  }),
-  core: art(32, 30, p => {
-    p.line(10, 21, 7, 26); p.line(22, 21, 25, 26); // legs
-    p.box(4, 25, 24, 5); p.line(7, 27, 24, 27, C.dim); // base
-    p.disc(16, 12, 10); p.disc(16, 12, 4, MK); // reactor sphere + core
-    p.ring(16, 12, 15, 3, 0, Math.PI); // orbit ring, front half
-    p.ring(16, 12, 15, 3, Math.PI, 2 * Math.PI, C.dim);
-  }),
-  // orbital railgun angled down-left: breech and rod magazine, twin rails wrapped in magnetic coils, tail fin
-  striker: art(64, 44, p => {
-    const r = p.rot(34, 22, -.5, 1.3); // local -x points down-left at the planet
-    r.poly([[14, 5], [19, 8], [12, 5]]); // tail fin
-    r.rect(8, -6, 10, 12); // breech
-    r.rect(10, -9, 6, 3); for (const x of [11, 13, 15]) r.seg(x, -8, x, -7, C.dim); // rod magazine
-    r.rect(-22, -3, 30, 6); r.seg(-21, 0, 7, 0, C.dim); // twin rails on a solid body
-    for (const x of [-18, -12, -6, 0]) r.rect(x, -4, 2, 8, MK); // magnetic coils
-    r.seg(-24, -3, -24, 3); r.dot(-26, 0, C.line); // muzzle ring, rod tip
-    r.seg(18, -2, 21, -2); r.seg(18, 2, 21, 2); // thrusters
-  }),
-  // tesla satellite: winding rings narrowing up to a charged sphere, side orbs, emitter prong pointing down
-  coil: art(48, 40, p => {
-    p.line(14, 30, 6, 30); p.line(34, 30, 42, 30); p.disc(4, 30, 2); p.disc(44, 30, 2); // arms and side orbs
-    p.box(15, 26, 18, 8); p.line(17, 29, 30, 29, C.dim); p.fill(19, 31, 10, 1, MK); // base
-    p.poly([[15, 25], [33, 25], [29, 13], [19, 13]]); // solid cone behind the windings
-    p.line(24, 8, 24, 26, C.dim); // coil core
-    for (const [y, rx] of [[23, 9], [19, 7], [15, 5]]) p.ring(24, y, rx, 2); // windings
-    p.disc(24, 7, 5); p.disc(24, 7, 2, MK); // charged sphere
-    for (const [x, y] of [[16, 3], [33, 4], [30, 0], [17, 10]]) p.dot(x, y, MK); // sparks
-    p.line(24, 34, 24, 38); p.dot(24, 39, MK); // emitter prong
-  }),
-  // captured asteroid: cratered rock, drill rig biting into it, crane, ore hopper and a chute toward the planet
-  asteroid: art(56, 36, p => {
-    p.poly([[6, 14], [12, 6], [22, 4], [31, 8], [35, 17], [31, 27], [20, 31], [9, 28], [4, 21]]);
-    for (const [x, y, rx, ry] of [[15, 13, 3, 2], [24, 22, 4, 3], [12, 23, 2, 1]]) p.ring(x, y, rx, ry, 0, 2 * Math.PI, C.dim);
-    p.box(26, 0, 12, 7); p.fill(28, 2, 3, 2, MK); // rig
-    p.line(30, 7, 32, 12); p.line(34, 7, 32, 12); // drill bit
-    p.line(37, 3, 46, 3); p.line(46, 3, 46, 8); // crane
-    p.box(33, 24, 9, 5); // ore hopper
-    p.line(42, 27, 52, 33); p.line(42, 29, 51, 34); p.dot(53, 34, MK); // chute
-    p.dot(47, 15); p.fill(49, 19, 2, 2, C.line); // drifting ore
-  }),
-  // volcano with an igniter clamp over its glowing crater, lava runs and rock strata
-  volcano: art(34, 32, p => {
-    p.poly([[1, 31], [12, 9], [22, 9], [33, 31]]);
-    p.line(7, 22, 27, 22, C.dim); p.line(4, 27, 30, 27, C.dim); // strata
-    p.fill(13, 9, 9, 2, MK); p.line(15, 11, 13, 17, MK); p.line(20, 11, 22, 15, MK); // crater and lava runs
-    p.box(10, 5, 15, 4); // igniter clamp
-    p.line(12, 5, 12, 1); p.line(22, 5, 22, 1); p.line(12, 1, 22, 1); p.dot(17, 0, MK); // frame and beacon
-  }),
-  // factory hall with three smokestacks and glowing furnace windows
-  forge: art(34, 34, p => {
-    p.box(4, 4, 6, 17); p.box(13, 9, 5, 12); p.box(22, 1, 7, 20); // stacks
-    p.fill(5, 7, 4, 1, MK); p.fill(23, 4, 5, 1, MK); // warning bands
-    p.box(1, 20, 32, 14); // hall
-    for (let x = 4; x < 30; x += 7) p.fill(x, 24, 4, 3, MK); // furnace windows
-    p.line(2, 30, 31, 30, C.dim);
-  }),
-  // antimatter orb floating in a magnetic field between two coiled pylons
-  antimatter: art(34, 34, p => {
-    p.box(1, 28, 32, 6); p.line(4, 31, 29, 31, C.dim); // base
-    p.box(3, 6, 5, 23); p.box(26, 6, 5, 23); p.box(2, 3, 7, 4); p.box(25, 3, 7, 4); // pylons and caps
-    for (const y of [11, 16, 21, 25]) { p.line(4, y, 6, y, MK); p.line(27, y, 29, y, MK); } // coils
-    p.ring(17, 16, 12, 3, Math.PI, 2 * Math.PI, C.dim); // field ring, back half
-    p.disc(17, 16, 6); p.disc(17, 16, 3, MK); // orb
-    p.ring(17, 16, 12, 3, 0, Math.PI); // field ring, front half
-  }),
-  // plasma lance angled down-left: power housing with a glowing cell, a barrel ringed with focusing coils, a crystal tip
-  lance: art(64, 42, p => {
+  // orbital railgun: gunmetal breech with a rod drum and hazard stripe, twin rails wrapped in glowing coils, a tungsten rod
+  striker: paint(64, 44, p => {
     const r = p.rot(34, 22, -.5, 1.3);
-    r.seg(20, -4, 24, -7); r.seg(20, 4, 24, 7); // fins
-    r.rect(8, -6, 12, 12); r.rect(11, -9, 6, 3, MK); // housing and its cell
-    r.rect(-20, -2, 28, 4); r.seg(-19, 0, 7, 0, C.dim); // barrel
-    for (const x of [-16, -9, -2, 5]) r.rect(x, -4, 2, 8, MK); // focusing coils
-    r.poly([[-20, -3], [-27, 0], [-20, 3]], MK); r.dot(-28, 0, C.line); // crystal tip
+    r.rect(16, -4, 3, 8, 'D'); r.rect(19, -3, 2, 6, 'A'); // thruster
+    r.rect(7, -11, 7, 4, 'M'); r.seg(9, -11, 9, -8, 'D'); r.seg(12, -11, 12, -8, 'D'); // rod drum
+    r.poly([[3, -7], [16, -6], [16, 6], [3, 7]], 'H'); r.rect(5, 3, 10, 2, 'S'); // breech, hazard stripe
+    r.rect(-24, -4, 27, 8, 'K'); r.rect(-24, -4, 27, 2, 'M'); r.rect(-24, 2, 27, 2, 'M'); // twin rails
+    for (const x of [-20, -14, -8, -2]) r.rect(x, -5, 3, 10, 'A'); // magnetic coils
+    r.rect(-27, -1, 4, 2, 'W'); // rod tip
   }),
-  // ion cannon satellite: two solar wings, a body with a glowing core, a dish facing down at the planet
-  ion: art(52, 34, p => {
-    for (const x0 of [0, 40]) { p.box(x0, 6, 12, 7); for (let k = 3; k < 11; k += 3) p.line(x0 + k, 7, x0 + k, 11, C.dim); }
-    p.line(12, 9, 18, 9); p.line(34, 9, 40, 9); // arms
-    p.box(18, 1, 16, 15); p.fill(22, 4, 8, 4, MK); p.line(20, 11, 31, 11, C.dim); // body and core
-    p.poly([[15, 16], [37, 16], [32, 24], [20, 24]]); p.line(19, 18, 33, 18, C.dim); // dish
-    p.line(26, 24, 26, 30); p.dot(26, 31, MK); p.dot(26, 32, MK); // emitter
+  // plasma lance: magenta housing with a glowing plasma chamber, a steel barrel with focusing rings, a crystal tip
+  lance: paint(64, 42, p => {
+    const r = p.rot(34, 22, -.5, 1.3);
+    r.poly([[15, -5], [22, -9], [22, -6], [18, -3]], 'S'); r.poly([[15, 5], [22, 9], [22, 6], [18, 3]], 'S'); // fins
+    r.poly([[4, -6], [18, -5], [18, 5], [4, 6]], 'H'); r.rect(7, -3, 9, 6, 'X'); // housing, plasma chamber
+    r.rect(-20, -2, 24, 4, 'M'); for (const x of [-16, -9, -2]) r.rect(x, -4, 2, 8, 'S'); // barrel, rings
+    r.poly([[-20, -3], [-27, 0], [-20, 3]], 'X'); r.dot(-27, 0, 'W'); // crystal tip
   }),
-  // seed missile pod: a hovering launcher, six tubes with accent warheads, an antenna, two thrusters
-  pod: art(44, 34, p => {
-    p.box(5, 6, 31, 18); p.line(6, 15, 34, 15, C.dim);
-    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { p.box(8 + i * 9, 8 + j * 8, 7, 5); p.fill(10 + i * 9, 10 + j * 8, 3, 1, MK); }
-    p.line(34, 6, 40, 0); p.dot(40, 0, MK); p.dot(41, 1, MK); // antenna
-    for (const x of [9, 26]) { p.box(x, 24, 7, 4); p.fill(x + 2, 28, 3, 3, MK); } // thrusters
+  // solar mirror satellite: blue cell wings on steel arms, a gold-foil body with a sensor, a reflector dish facing the planet
+  solar: paint(56, 26, p => {
+    for (const x0 of [0, 39]) {
+      p.rect(x0, 2, 17, 10, 'M'); p.rect(x0 + 1, 3, 15, 8, 'S'); // frame and cells
+      for (let k = 4; k < 16; k += 4) p.rect(x0 + k, 3, 1, 8, 'D');
+      p.rect(x0 + 1, 7, 15, 1, 'D');
+    }
+    p.rect(17, 6, 5, 2, 'M'); p.rect(34, 6, 5, 2, 'M'); // arms
+    p.rect(22, 1, 12, 15, 'H'); p.rect(22, 9, 12, 1, 'D'); p.rect(25, 4, 6, 3, 'A'); // gold body, seam, sensor
+    p.poly([[19, 16], [37, 16], [33, 22], [23, 22]], 'M'); p.rect(24, 17, 8, 2, 'W'); // reflector dish
   }),
-  // mass driver: a magnetic rail ramp aimed up at the planet, coils along it, a capsule waiting at the top
-  driver: art(34, 34, p => {
-    p.box(0, 28, 34, 6); p.line(3, 31, 30, 31, C.dim); // base
-    p.line(22, 12, 24, 28); p.line(14, 20, 15, 28); // struts
-    p.poly([[3, 28], [25, 6], [30, 9], [10, 28]]); // rail
-    for (let k = 0; k < 4; k++) p.fill(9 + k * 5, 22 - k * 5, 3, 2, MK); // coils
-    p.box(25, 2, 6, 5); p.dot(27, 4, MK); // capsule
+  // storm coil satellite: violet body with an antenna, side orbs, copper windings narrowing down to a charged sphere
+  coil: paint(48, 40, p => {
+    p.rect(6, 13, 10, 2, 'M'); p.rect(32, 13, 10, 2, 'M'); p.circ(4, 14, 3, 'X'); p.circ(44, 14, 3, 'X'); // arms and orbs
+    p.rect(23, 2, 2, 7, 'M'); p.circ(24, 2, 1, 'A'); // antenna
+    p.rect(15, 8, 18, 11, 'H'); p.rect(15, 12, 18, 2, 'D'); p.rect(19, 15, 10, 2, 'A'); // body
+    p.rect(22, 19, 4, 14, 'D'); // core rod
+    for (const [y, rx] of [[21, 9], [25, 7], [29, 5]]) p.oval(24, y, rx, 1, 'S'); // windings
+    p.circ(24, 35, 4, 'X'); p.dot(23, 34, 'W'); // discharge sphere
   }),
-  // hydro cannon: a water tower on legs, a pressure gauge, a nozzle aimed up-right
-  hydro: art(34, 32, p => {
-    p.line(7, 20, 4, 28); p.line(17, 20, 20, 28); p.line(5, 25, 19, 25, C.dim); // legs
-    p.box(0, 28, 26, 4); // base
-    p.disc(12, 12, 9); p.line(4, 14, 20, 14, C.dim); p.disc(12, 9, 2, MK); // tank, waterline, gauge
-    p.line(19, 8, 28, 2); p.line(20, 10, 29, 4); p.box(27, 0, 6, 5); p.dot(30, 2, MK); // nozzle
+  // ion cannon satellite: white body with a teal stripe and window, blue wings, a thruster bell glowing cyan below
+  ion: paint(52, 34, p => {
+    for (const x0 of [0, 39]) { p.rect(x0, 6, 13, 9, 'M'); p.rect(x0 + 1, 7, 11, 7, 'G'); for (let k = 4; k < 12; k += 4) p.rect(x0 + k, 7, 1, 7, 'D'); }
+    p.rect(13, 9, 5, 2, 'M'); p.rect(34, 9, 5, 2, 'M');
+    p.rect(17, 1, 18, 15, 'H'); p.rect(17, 5, 18, 2, 'S'); p.rect(22, 9, 8, 4, 'A'); // body
+    p.poly([[20, 16], [32, 16], [35, 24], [17, 24]], 'M'); p.rect(19, 23, 14, 1, 'D'); // thruster bell
+    p.rect(21, 24, 10, 2, 'X'); p.rect(23, 26, 6, 2, 'X'); p.rect(25, 28, 2, 3, 'W'); // ion glow
   }),
-  // star forge: a containment frame holding a tiny star, ring arcs around it
-  star: art(34, 32, p => {
-    p.box(2, 26, 30, 6); p.line(5, 29, 28, 29, C.dim); // base
-    p.line(6, 26, 9, 5); p.line(28, 26, 25, 5); p.box(8, 2, 18, 4); // frame
-    p.ring(17, 15, 13, 4, Math.PI, 2 * Math.PI, C.dim); // ring, back half
-    p.disc(17, 15, 6, MK); p.disc(17, 15, 3, C.line); // the star
-    for (const [x, y] of [[17, 7], [17, 23], [9, 15], [25, 15]]) p.dot(x, y, MK); // rays
-    p.ring(17, 15, 13, 4, 0, Math.PI); // ring, front half
+  // microbe swarm carrier: a green hive hull with a glass canopy, launch bays, side engines and three drones flying out
+  drone: paint(44, 34, p => {
+    p.rect(0, 13, 5, 6, 'M'); p.rect(39, 13, 5, 6, 'M'); p.rect(0, 15, 1, 2, 'A'); p.rect(43, 15, 1, 2, 'A'); // engines
+    p.oval(22, 16, 18, 8, 'H'); p.rect(6, 19, 32, 2, 'S'); // hull and belly stripe
+    p.oval(22, 9, 7, 4, 'G', true); p.rect(15, 9, 15, 1, 'M'); // canopy
+    for (const x of [10, 19, 28]) { p.rect(x, 13, 6, 4, 'K'); p.rect(x + 2, 14, 2, 2, 'A'); } // launch bays
+    for (const [x, y] of [[8, 28], [20, 31], [33, 29]]) { p.rect(x, y, 4, 2, 'M'); p.dot(x - 1, y - 1, 'D'); p.dot(x + 4, y - 1, 'D'); p.dot(x + 1, y + 2, 'A'); } // drones
+  }),
+  // meteor quarry: a cratered asteroid with glowing ore seams, a yellow mining rig drilling it, a crane and an ore chute
+  asteroid: paint(56, 36, p => {
+    p.poly([[6, 14], [12, 6], [22, 4], [31, 8], [35, 17], [31, 27], [20, 31], [9, 28], [4, 21]], 'R');
+    for (const [x, y, rx, ry] of [[15, 13, 3, 2], [24, 22, 4, 3], [12, 23, 2, 1]]) p.oval(x, y, rx, ry, 'D');
+    p.line(9, 18, 14, 20, 'A'); p.line(20, 10, 25, 13, 'A'); p.line(27, 17, 29, 23, 'A'); // ore seams
+    p.rect(31, 7, 3, 6, 'M'); // drill shaft
+    p.rect(26, 1, 13, 7, 'H'); for (const x of [28, 32, 36]) p.rect(x, 2, 2, 5, 'S'); // rig with hazard stripes
+    p.rect(38, 3, 9, 2, 'H'); p.rect(46, 3, 2, 7, 'M'); p.rect(45, 10, 4, 2, 'D'); // crane and grab
+    p.rect(34, 24, 10, 6, 'H'); p.rect(34, 24, 10, 1, 'S'); // ore hopper
+    p.poly([[43, 26], [53, 32], [52, 34], [42, 29]], 'M'); p.rect(48, 16, 3, 3, 'R'); p.rect(52, 21, 2, 2, 'R'); // chute, ore
+  }),
+  // seed missile pod: an olive launcher with a yellow band, six tubes with green seed warheads, an antenna, two thrusters
+  pod: paint(44, 34, p => {
+    p.rect(5, 6, 31, 18, 'H'); p.rect(5, 6, 31, 2, 'S');
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { const x = 8 + i * 9, y = 10 + j * 7; p.rect(x, y, 7, 5, 'K'); p.rect(x + 2, y + 1, 3, 3, 'X'); p.dot(x + 2, y + 1, 'W'); } // tubes with seed warheads
+    p.line(34, 6, 40, 0, 'M'); p.rect(40, 0, 2, 2, 'A'); // antenna
+    for (const x of [9, 26]) { p.rect(x, 24, 7, 3, 'M'); p.rect(x + 2, 27, 3, 3, 'A'); } // thrusters
+  }),
+  // comet launcher: a red lattice gantry, a white rocket with a red nose and fins, a striped launch pad
+  rocket: paint(30, 36, p => {
+    p.rect(2, 3, 2, 27, 'S'); p.rect(7, 3, 2, 27, 'S'); for (let y = 5; y < 28; y += 5) { p.line(4, y, 6, y + 4, 'S'); p.line(6, y, 4, y + 4, 'S'); } // gantry
+    p.rect(9, 10, 4, 2, 'M'); p.rect(9, 18, 4, 2, 'M'); // arms
+    p.rect(13, 9, 7, 17, 'H'); p.poly([[13, 9], [16.5, 2], [20, 9]], 'S'); p.circ(16, 13, 1, 'G'); p.rect(13, 19, 7, 2, 'S'); // body, nose, window, band
+    p.poly([[13, 20], [9, 27], [13, 26]], 'S'); p.poly([[20, 20], [24, 27], [20, 26]], 'S'); // fins
+    p.rect(15, 26, 3, 2, 'A'); // exhaust
+    p.rect(0, 29, 30, 7, 'M'); for (let x = 1; x < 29; x += 4) p.rect(x, 29, 2, 2, 'K'); // pad with hazard marks
+  }),
+  // volcano igniter: an orange drill head on a steel derrick, the heated drill bit sunk into a glowing lava pool
+  volcano: paint(34, 32, p => {
+    p.poly([[0, 32], [3, 26], [9, 27], [12, 32]], 'K'); p.poly([[22, 32], [26, 26], [31, 27], [34, 32]], 'K'); // basalt
+    p.oval(17, 29, 13, 3, 'X'); p.dot(10, 28, 'W'); p.dot(23, 30, 'W'); // lava pool
+    for (const [a, b] of [[9, 15], [25, 19]]) { p.line(a, 27, b, 6, 'M'); p.line(a + 1, 27, b + 1, 6, 'M'); } // derrick legs
+    for (const y of [12, 19]) p.line(11 + (y - 12) * .3, y, 23 - (y - 12) * .3, y, 'D'); // cross braces
+    p.rect(16, 7, 3, 18, 'M'); p.rect(16, 22, 3, 5, 'X'); // drill shaft, heated bit
+    p.rect(10, 2, 15, 5, 'H'); for (const x of [12, 16, 20]) p.rect(x, 3, 2, 3, 'S'); // drill head with stripes
+    p.rect(17, 0, 1, 2, 'A'); // beacon
+  }),
+  // mass driver: a blue base hall, a steel rail ramp aimed at the planet with glowing coils, a white capsule at the top
+  driver: paint(34, 34, p => {
+    p.line(22, 12, 24, 28, 'D'); p.line(14, 20, 15, 28, 'D'); // struts
+    p.poly([[3, 28], [25, 6], [30, 9], [10, 28]], 'M'); p.line(6, 27, 27, 8, 'D'); // rail and groove
+    for (let k = 0; k < 4; k++) p.rect(9 + k * 5, 21 - k * 5, 3, 3, 'A'); // coils
+    p.rect(25, 1, 6, 6, 'S'); p.dot(27, 3, 'G'); // capsule
+    p.rect(0, 28, 34, 6, 'H'); for (const x of [4, 12, 20, 28]) p.rect(x, 30, 3, 2, 'A'); // base hall and windows
+  }),
+  // bio seeder: a green-tinted glass dome over young plants, on a white base with a green stripe and vents
+  bio: paint(32, 26, p => {
+    p.circ(16, 17, 13, 'G', true);
+    for (const x of [9, 16, 23]) p.line(x, 17 - Math.round(Math.sqrt(169 - (x - 16) ** 2)) + 1, x, 16, 'M'); // ribs
+    p.rect(11, 11, 2, 6, 'X'); p.rect(9, 12, 2, 2, 'X'); p.rect(13, 10, 2, 2, 'X'); p.circ(20, 13, 2, 'X'); p.rect(20, 14, 1, 3, 'X'); p.dot(12, 9, 'A'); p.dot(20, 11, 'A'); // plants
+    p.rect(1, 17, 30, 9, 'H'); p.rect(1, 19, 30, 2, 'S'); for (const x of [5, 24]) p.rect(x, 22, 3, 2, 'D'); // base
+  }),
+  // atmo forge: a rust hall with glowing furnace windows, a concrete cooling tower and a striped smokestack
+  forge: paint(34, 34, p => {
+    p.poly([[2, 19], [5, 11], [4, 5], [13, 5], [12, 11], [15, 19]], 'M'); p.rect(4, 5, 9, 1, 'D'); // cooling tower
+    p.rect(22, 1, 6, 18, 'M'); for (const y of [3, 8]) p.rect(22, y, 6, 2, 'S'); // smokestack and bands
+    p.rect(1, 18, 32, 16, 'H'); p.rect(1, 18, 32, 2, 'D'); // hall and roof
+    for (let x = 4; x < 30; x += 7) p.rect(x, 23, 4, 4, 'X'); // furnace windows
+    p.rect(2, 30, 30, 1, 'D');
+  }),
+  // hydro cannon: a teal water tank on steel legs with a glass gauge, a pressure nozzle aimed up-right
+  hydro: paint(34, 32, p => {
+    p.line(7, 19, 4, 28, 'M'); p.line(17, 19, 20, 28, 'M'); p.line(5, 25, 19, 25, 'D'); // legs
+    p.rect(0, 28, 26, 4, 'D');
+    p.poly([[17, 8], [28, 1], [30, 4], [19, 11]], 'M'); p.rect(27, 0, 5, 5, 'S'); p.dot(30, 2, 'X'); // nozzle
+    p.circ(12, 12, 9, 'H'); p.rect(4, 14, 17, 2, 'S'); p.rect(11, 6, 2, 8, 'X'); p.dot(11, 5, 'W'); // tank, band, gauge
+  }),
+  // terra core: a teal reactor sphere with a glowing heart on legs, a gold orbit ring
+  core: paint(32, 30, p => {
+    p.arc(16, 12, 15, 3, Math.PI, 2 * Math.PI, 'D'); // ring, back half
+    p.line(10, 21, 7, 26, 'M'); p.line(22, 21, 25, 26, 'M'); // legs
+    p.rect(4, 25, 24, 5, 'D'); p.rect(4, 25, 24, 1, 'M');
+    p.circ(16, 12, 10, 'H'); p.circ(16, 12, 5, 'K'); p.circ(16, 12, 3, 'A'); p.dot(15, 11, 'W'); // sphere, window, heart
+    p.arc(16, 12, 15, 3, 0, Math.PI, 'S'); p.arc(16, 13, 15, 3, 0, Math.PI, 'S'); // ring, front half
+  }),
+  // annihilator: a white-violet antimatter orb held between two steel pylons with glowing coils, a violet field ring
+  antimatter: paint(34, 34, p => {
+    p.arc(17, 16, 12, 3, Math.PI, 2 * Math.PI, 'S'); // field ring, back half
+    p.rect(1, 28, 32, 6, 'H'); p.rect(1, 28, 32, 1, 'S');
+    p.rect(3, 6, 5, 23, 'M'); p.rect(26, 6, 5, 23, 'M'); p.rect(2, 3, 7, 4, 'D'); p.rect(25, 3, 7, 4, 'D'); // pylons and caps
+    for (const y of [11, 16, 21, 25]) { p.rect(3, y, 5, 1, 'A'); p.rect(26, y, 5, 1, 'A'); } // coils
+    p.circ(17, 16, 6, 'X'); p.circ(17, 16, 2, 'W'); // orb
+    p.arc(17, 16, 12, 3, 0, Math.PI, 'S'); // field ring, front half
+  }),
+  // star forge: a gold containment frame holding a tiny star, a copper ring around it
+  star: paint(34, 32, p => {
+    p.arc(17, 15, 13, 4, Math.PI, 2 * Math.PI, 'S'); // ring, back half
+    p.rect(2, 26, 30, 6, 'D'); p.rect(2, 26, 30, 2, 'H');
+    p.line(6, 26, 9, 5, 'H'); p.line(7, 26, 10, 5, 'H'); p.line(28, 26, 25, 5, 'H'); p.line(27, 26, 24, 5, 'H'); p.rect(8, 2, 18, 4, 'H'); // frame
+    p.circ(17, 15, 6, 'X'); p.circ(17, 15, 3, 'W'); // the star
+    for (const [x, y] of [[17, 7], [17, 23], [9, 15], [25, 15]]) p.dot(x, y, 'A'); // rays
+    p.arc(17, 15, 13, 4, 0, Math.PI, 'S'); // ring, front half
   }),
 };
 // Marks: a system's look grows with its best upgrade (Lv 10 / 25 / 50): the amber accents turn cyan, violet, then white (Mark IV also glows).
@@ -377,7 +452,7 @@ function recolour(src, [light, dark]) { // grit()'s accent pair -> this mark's p
   return c;
 }
 const LOOKS = Object.fromEntries(Object.entries(ART).map(([id, a], i) => {
-  const lit = grit(a, i, diagLight);
+  const lit = shade(a, PAL[id], i);
   return [id, { next: shadow(a, false), sil: shadow(a, true), lit, marks: [lit, ...MARKS.map(m => recolour(lit, m))] }];
 }));
 const look = s => LOOKS[SYS[s].id]; // the sprites of whatever system holds slot s
@@ -625,7 +700,8 @@ function sysPos(s, t) {
   let x = CX + sl.x * R0, y = sl.ground ? GY - h / 2 : CY + sl.y * R0 * FY + Math.sin(t * 1.5 + s * 1.3);
   x = Math.max(w / 2 + 2, Math.min(W - w / 2 - 2, x));
   if (!sl.ground) y = Math.max(TOP + h / 2 + 10, y); // room for the label above
-  if (x - w / 2 < SIDE.r && y - h / 2 < SIDE.b) y = SIDE.b + h / 2 + 10; // never under the stat boxes
+  const k = calm() ? 0 : Math.max(0, 1 - (last - (SYS[s].fx ?? -9)) / .22); // recoil: kicked back from the shot, easing home
+  if (k) { x -= Math.cos(SYS[s].fang) * 3 * k * k; y -= Math.sin(SYS[s].fang) * 3 * k * k; }
   return [Math.round(x), Math.round(y)];
 }
 const muzzle = s => { const [x, y] = sysPos(s, last), [dx, dy] = MUZZLE[SYS[s].id] || [0, 0]; return [x + dx, y + dy]; };
@@ -686,6 +762,7 @@ function text(str, x, y, col = C.line, big = 1) { // centred on x (kept on scree
 function fire(s, real) {
   const a = Math.PI + Math.random() * Math.PI, d = R * .8 * Math.sqrt(Math.random()); // upper half: the lower half is behind the ground
   const tx = CX + Math.cos(a) * d, ty = CY + Math.sin(a) * d, [sx, sy] = muzzle(s), shot = SYS[s].shot;
+  SYS[s].fx = last; SYS[s].fang = Math.atan2(ty - sy, tx - sx); // recoil and muzzle flash (drawSystem, sysPos)
   play(shot, real ? 1 : .35);
   if (shot === 'light') { // sunlight from above lands on both mirror panels, then one reflected beam heats the planet
     for (const px of [-21, 20]) {
@@ -875,6 +952,12 @@ function drawSystem(s, t) {
   const lk = look(s), m = S.on[s] ? markOf(s) : 0, img = S.on[s] ? lk.marks[m] : unlocked(s) ? lk.next : lk.sil, [x, y] = sysPos(s, t);
   if (m === 3) { ctx.globalAlpha = .25 + .15 * (calm() ? 1 : Math.sin(t * 3)); P.ring(x, y, img.width / 2 + 4, img.height / 2 + 4, 0, 2 * Math.PI, C.sun); ctx.globalAlpha = 1; } // Mark IV halo
   blit(img, x, y);
+  const since = last - (SYS[s].fx ?? -9);
+  if (S.on[s] && since < .12 && !calm()) { // firing: the sprite flashes white, a star at the muzzle
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .45 * (1 - since / .12); blit(img, x, y); ctx.restore();
+    const [mx, my] = muzzle(s), r = since < .06 ? 4 : 2;
+    P.fill(mx - r, my, r * 2 + 1, 1, C.line); P.fill(mx, my - r, 1, r * 2 + 1, C.line); P.fill(mx - 1, my - 1, 3, 3, since < .06 ? '#ffffff' : C.acc);
+  }
 }
 // Labels, price tags, accent dots and selection brackets go on top of every system, so nothing hides them.
 function drawMarks(s, t) {
