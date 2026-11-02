@@ -59,6 +59,8 @@ const MAXL = 50, UPM = [[.25, 1.17], [.8, 1.2], [2.5, 1.25]]; // upgrade k costs
 // Total life earned for a fully terraformed planet: GOAL on the first world (a sim player takes ~13 min), then x GOAL_GROWTH per world.
 // The warp boost doubles output each world, so later worlds still get faster (world 8 takes under 2 min) without becoming one tap.
 const GOAL = 5e8, GOAL_GROWTH = 4;
+// Highest world number: every value stays finite well past it (goal 5e8 x 4^400 ~ 1e250, life checked < 1e300). Warps stop counting here.
+const MAX_WORLD = 400;
 // Always one clear next step at the top, with a reward: [text, progress, target, reward, go].
 // go: the system a tap on the unfinished goal jumps to (-1 = back to the planet); a function picks it at tap time.
 const topSys = () => S.L.reduce((b, L, s) => (Math.max(...L) > Math.max(...S.L[b]) ? s : b), 0); // furthest-upgraded system

@@ -14,11 +14,16 @@ console.assert(sysRate(0, [0, 0, 0]) === 3 && sysRate(0, [1, 4, 0]) === 12, 'sys
 
 const fmt = n => {
   if (n < 1000) return n < 10 ? String(Math.floor(n * 10) / 10) : String(Math.floor(n));
+  if (n >= 999.5e15) { // past the q suffix: scientific, e.g. 6.64e44
+    let e = Math.floor(Math.log10(n)), m = +(n / 10 ** e).toFixed(2);
+    if (m >= 10) { m /= 10; e++; }
+    return m.toFixed(2) + 'e' + e;
+  }
   let k = -1;
   while (n >= 999.5 && k < 4) { n /= 1000; k++; } // 999.5 not 1000: values that round up move to the next unit
   return n.toFixed(n < 9.995 ? 2 : n < 99.95 ? 1 : 0) + 'kmbtq'[k];
 };
-console.assert(fmt(999999) === '1.00m' && fmt(9999) === '10.0k' && fmt(1500) === '1.50k' && fmt(12.7) === '12' && fmt(2e15) === '2.00q', 'fmt rounding');
+console.assert(fmt(999999) === '1.00m' && fmt(9999) === '10.0k' && fmt(1500) === '1.50k' && fmt(12.7) === '12' && fmt(2e15) === '2.00q' && fmt(6.64e44) === '6.64e44' && fmt(9.999e20) === '1.00e21' && fmt(5e17) === '500q' && fmt(1e18) === '1.00e18', 'fmt rounding');
 const mmss = s => `${Math.floor(s / 60)}m ${s % 60}s`;
 const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][n] ?? n;
 
@@ -344,7 +349,7 @@ const TILE = Object.fromEntries(Object.entries(LOOKS).map(([id, l]) => [id, { li
 // 3x5 pixel font for numbers on the canvas (smooth canvas text would blur when scaled).
 const GLYPH = { 0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001', 5: '111100111001111', 6: '111100111101111', 7: '111001001001001', 8: '111101111101111', 9: '111101111001111',
   '.': '000000000000010', '/': '001001010100100', '+': '000010111010000', k: '100101110101101', m: '000111111101101', b: '100100111101111', t: '010111010010011',
-  q: '000111101111001', x: '000101010101000' };
+  q: '000111101111001', x: '000101010101000', e: '111101111100111' };
 
 // ---------- planet textures ----------
 const TW = 256, TH = 128; // planet surface as a 2:1 wrap-around map
@@ -1392,7 +1397,7 @@ $('warpstay').addEventListener('click', () => { // admire the living planet; the
 function warp() {
   $('warp').hidden = true; shield(false); play('warp');
   tiles[0].focus({ preventScroll: true });
-  Object.assign(S, { world: S.world + 1, life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: S.seeds + 1 });
+  Object.assign(S, { world: Math.min(S.world + 1, MAX_WORLD), life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: S.seeds + 1 });
   if (has('seedbank')) S.life = 1000 * boost();
   const before = SYS.map(sy => sy.id);
   setLoadout(S.world); resize(); // ground systems change size: re-fit the colony around them
@@ -1600,11 +1605,11 @@ const optional = (v, ok) => v === undefined || ok(v); // fields that older saves
 const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
   && ['life', 'earned'].every(k => Number.isFinite(d.S[k]) && d.S[k] >= 0 && d.S[k] < 1e300) // room for 24h of income on the last allowed world
   && ['taps', 'goal', 'world'].every(k => Number.isInteger(d.S[k]) && d.S[k] >= 0)
-  && d.S.goal <= GOALS.length && d.S.world <= 60 // 2.5^world boost: the cap keeps every number finite
+  && d.S.goal <= GOALS.length && d.S.world <= MAX_WORLD // warp() never goes past it, so every reachable save loads
   && Array.isArray(d.S.on) && d.S.on.length === SYS.length && d.S.on.every((on, s) => typeof on === 'boolean' && (!on || s === 0 || d.S.on[s - 1])) // unlocked in order
   && Array.isArray(d.S.L) && d.S.L.length === SYS.length && d.S.L.every((l, s) => Array.isArray(l) && l.length === 3 && l.every(n => Number.isInteger(n) && n >= 0 && n <= MAXL) && (d.S.on[s] || l.every(n => !n)))
   && optional(d.S.intro, v => typeof v === 'boolean') && optional(d.S.done, v => typeof v === 'boolean')
-  && optional(d.S.seeds, v => Number.isInteger(v) && v >= 0 && v <= 60)
+  && optional(d.S.seeds, v => Number.isInteger(v) && v >= 0 && v <= 1e6) // one per warp plus lucky crates
   && optional(d.S.tal, v => Array.isArray(v) && v.every(id => TAL.some(t => t.id === id)))
   && optional(d.S.best, v => !!v && typeof v === 'object' && Object.entries(v).every(([k, s]) => WORLDS.some(w => w.name === k) && Number.isInteger(s) && s >= 0))
   && optional(d.S.ach, v => Array.isArray(v) && v.every(id => ACH.some(a => a.id === id)))
@@ -1674,10 +1679,16 @@ cv.addEventListener('pointerdown', e => {
   tapPlanet(x, y);
 });
 // keyboard players tap the planet with Enter or Space while the canvas has focus
+// Keyboard on the focused planet: Enter/Space catches a comet or opens a supply crate when one is in the sky, else taps the planet;
+// M taps the moon. Pointer players get the same things by tapping them.
 cv.addEventListener('keydown', e => {
+  if ((e.key === 'm' || e.key === 'M') && moonAt) { e.preventDefault(); return tapMoon(); }
   if (e.key !== 'Enter' && e.key !== ' ') return;
   e.preventDefault();
-  if (!e.repeat) tapSomewhere(); // a held key is not a combo
+  if (e.repeat) return; // a held key is not a combo
+  if (comet) return catchComet();
+  if (crate) return openCrate();
+  tapSomewhere();
 });
 const tapSomewhere = (auto = false) => tapPlanet(CX + (Math.random() - .5) * R, CY - R * (.2 + Math.random() * .5), auto); // a spot on the visible face
 // Combo: hand taps less than COMBO_GAP apart chain up; 10 in a row pay x2, 25 pay x3. Pausing breaks it.
@@ -1705,7 +1716,7 @@ function tapPlanet(x, y, auto = false) {
 const EVENTS = {
   shower: { name: 'METEOR SHOWER', dur: 15, text: 'Taps pay x5 while it lasts.' },
   flare: { name: 'SOLAR FLARE', dur: 12, text: 'Every system fires double.' },
-  comet: { name: 'GOLDEN COMET', dur: 9, text: 'Tap it before it leaves: a minute of income.' },
+  comet: { name: 'GOLDEN COMET', dur: 9, text: 'Tap it (or press Enter on the planet) before it leaves: a minute of income.' },
 };
 let ev = null, evT = 0, evNext = 150 + Math.random() * 90, comet = null; // evNext: seconds of play until the next event
 const meteors = [];
@@ -1747,7 +1758,7 @@ function stepCrate(dt) {
   if (crate) { crate.k = Math.min(1, crate.k + dt / 3); return; }
   if (S.daily === today() || !S.intro || !S.on[0] || $('c').inert || (crateWait -= dt) > 0) return;
   crate = { side: Math.random() < .5 ? -1 : 1, k: 0 };
-  toast('SUPPLY DROP incoming. Tap the crate to open it.', true); play('ui');
+  toast('SUPPLY DROP incoming. Tap the crate (or press Enter on the planet) to open it.', true); play('ui');
 }
 // Easter egg: the moon answers a tap with a fact and a little life, once every 3 s.
 function tapMoon() {
