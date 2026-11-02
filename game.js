@@ -2118,7 +2118,12 @@ function step(ms) {
   last = t; paidAt = now; resume = false;
   if (!W) return; // no layout yet (0-size viewport)
   if (gap >= 30) away(now - gap * 1000);
-  else earn(rateOf() * gap);
+  else { // a flare pays double only for the time it has left; a stall (window covered, screen briefly locked) runs its clock
+    const flare = ev?.id === 'flare' ? Math.min(gap, Math.max(0, evT)) : 0, stall = gap - dt > .25 ? gap - dt : 0;
+    earn(rateOf(false) * gap + (rateOf() - rateOf(false)) * flare);
+    if (stall && ev) evT -= stall; // stepEvents() ends it if it ran out
+    if (stall && S.contract && !$('c').inert) S.contract.t -= stall;
+  }
   const heal = healOf(S.earned);
   off = (off + dt * 6) % TW;
   if (cine) return stepCine(t, dt);
