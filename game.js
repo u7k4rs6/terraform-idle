@@ -25,7 +25,7 @@ const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 
 // seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done;
 // done: this world is at 100% (the warp is waiting); best: fastest time to heal each world, by name
 // ach: achievement ids earned; n: lifetime counters the achievements watch (crits, comets caught, taps in meteor showers, longest time away in s)
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0 } };
+const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0 } };
 console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
 const has = id => S.tal.includes(id);
 const boost = () => (has('echo') ? 2.5 : 2) ** S.world; // every world you finish multiplies all output for good
@@ -343,7 +343,8 @@ const TILE = Object.fromEntries(Object.entries(LOOKS).map(([id, l]) => [id, { li
 
 // 3x5 pixel font for numbers on the canvas (smooth canvas text would blur when scaled).
 const GLYPH = { 0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001', 5: '111100111001111', 6: '111100111101111', 7: '111001001001001', 8: '111101111101111', 9: '111101111001111',
-  '.': '000000000000010', '/': '001001010100100', '+': '000010111010000', k: '100101110101101', m: '000111111101101', b: '100100111101111', t: '010111010010011' };
+  '.': '000000000000010', '/': '001001010100100', '+': '000010111010000', k: '100101110101101', m: '000111111101101', b: '100100111101111', t: '010111010010011',
+  q: '000111101111001', x: '000101010101000' };
 
 // ---------- planet textures ----------
 const TW = 256, TH = 128; // planet surface as a 2:1 wrap-around map
@@ -597,8 +598,8 @@ function texPos(x, y) {
 const blit = (s, x, y) => ctx.drawImage(s, Math.round(x - s.width / 2), Math.round(y - s.height / 2));
 const glyphZ = () => PX < 2.5 ? 2 : 1; // fine pixels: double-size glyphs so labels and hit numbers stay readable
 const textW = str => (str.length * 4 - 1) * glyphZ();
-function text(str, x, y, col = C.line) { // centred on x (kept on screen), bottom at y+5; dark shadow keeps it readable over the planet
-  const z = glyphZ(), half = textW(str) / 2;
+function text(str, x, y, col = C.line, big = 1) { // centred on x (kept on screen), bottom at y+5; dark shadow keeps it readable over the planet
+  const z = glyphZ() * big, half = textW(str) * big / 2;
   x = Math.max(half + 1, Math.min(W - half - 2, x));
   y = Math.round(y + 5 - 5 * z);
   for (const [d, c] of [[z, C.deep], [0, col]]) {
@@ -827,6 +828,11 @@ function draw(t, heal) {
   for (const q of parts) { ctx.globalAlpha = q.life; P.dot(q.x, q.y, q.color); }
   for (const f of floats) { ctx.globalAlpha = f.life; text(f.text, f.x, f.y, f.col); }
   ctx.globalAlpha = 1;
+  if (combo >= 3) { // combo counter over the upper-left of the planet, fading as the chain runs out of time
+    ctx.globalAlpha = Math.max(.3, 1 - (t - comboAt) / COMBO_GAP);
+    text(`${combo}` + (comboMul() > 1 ? ` x${comboMul()}` : ''), CX - R * .55, CY - R * .8, comboMul() > 1 ? C.sun : C.line, 2);
+    ctx.globalAlpha = 1;
+  }
 
   // first-run hints: tap the planet, then the Laser Station once it's affordable
   const bob = Math.round(Math.sin(t * 6) * 2);
@@ -966,6 +972,7 @@ const ACH = [
   ['storm', 'Storm Chaser', 'Tap 100 times during meteor showers.', () => S.n.storm >= 100],
   ['night', 'Night Owl', 'Come back to an hour or more of offline earnings.', () => S.n.away >= 3600],
   ['rich', 'Millionaire', 'Hold a million life at once.', () => S.life >= 1e6],
+  ['combo', 'Combo Master', 'Chain 25 taps in a row.', () => S.n.combo >= 25],
 ].map(([id, name, desc, test]) => ({ id, name, desc, test }));
 function checkAch() { // 10x a second from updateUI; each test is a few comparisons
   for (const a of ACH) if (!S.ach.includes(a.id) && a.test()) { S.ach.push(a.id); toast(`ACHIEVEMENT: ${a.name}. ${a.desc}`, true); play('talent'); }
@@ -1570,7 +1577,7 @@ function load() {
   const v = d.S, prev = S.world;
   Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world,
     on: v.on, L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0), done: v.done ?? false, best: v.best ?? {},
-    ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, ...(v.n || {}) },
+    ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, ...(v.n || {}) },
     seeds: v.seeds ?? v.world, tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
   const was = SYS.map(sy => sy.id).join();
   setLoadout(S.world);
@@ -1622,12 +1629,21 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('keydown', e => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
   e.preventDefault();
-  tapSomewhere();
+  if (!e.repeat) tapSomewhere(); // a held key is not a combo
 });
-const tapSomewhere = () => tapPlanet(CX + (Math.random() - .5) * R, CY - R * (.2 + Math.random() * .5)); // a spot on the visible face
-function tapPlanet(x, y) {
+const tapSomewhere = (auto = false) => tapPlanet(CX + (Math.random() - .5) * R, CY - R * (.2 + Math.random() * .5), auto); // a spot on the visible face
+// Combo: hand taps less than COMBO_GAP apart chain up; 10 in a row pay x2, 25 pay x3. Pausing breaks it.
+const COMBO_GAP = .6, comboMul = () => (combo >= 25 ? 3 : combo >= 10 ? 2 : 1);
+let combo = 0, comboAt = -9;
+function tapPlanet(x, y, auto = false) {
+  if (!auto) {
+    const was = comboMul();
+    combo = last - comboAt <= COMBO_GAP ? combo + 1 : 1; comboAt = last;
+    if (comboMul() > was) { pulses.push({ r: R * .9, life: 1, col: C.sun }); play('coin'); if (combo === 25) quip(QUIPS.combo); }
+    S.n.combo = Math.max(S.n.combo || 0, combo);
+  }
   const crit = Math.random() < (has('crit2') ? .2 : has('crit') ? .1 : 0), storm = ev?.id === 'shower'; // Lucky Strike / Jackpot; meteor showers pay x5
-  const g = tapGain() * (crit ? 10 : 1) * (storm ? 5 : 1);
+  const g = tapGain() * (crit ? 10 : 1) * (storm ? 5 : 1) * (auto ? 1 : comboMul());
   S.life += g; S.earned += g; S.taps++;
   if (crit) S.n.crit++;
   if (storm) S.n.storm++;
@@ -1693,7 +1709,8 @@ function step(ms) {
   shake = calm() ? 0 : Math.max(0, shake - dt * 3); flash = Math.max(0, flash - dt * 1.2);
   if (heal >= 1 && !S.done) showWarp();
   const aps = has('autotap2') ? 4 : has('autotap') ? 1 : 0; // Tap Bot / Tap Swarm: automatic taps per second
-  if (aps && (autoT += dt * aps) >= 1) { autoT -= 1; tapSomewhere(); }
+  if (aps && (autoT += dt * aps) >= 1) { autoT -= 1; tapSomewhere(true); }
+  if (combo && t - comboAt > COMBO_GAP) combo = 0;
 
   const reached = STAGES.filter(s => heal >= s.at).length;
   if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); shake = .8; play('milestone'); if (stage === 2) quip(QUIPS.half); }
