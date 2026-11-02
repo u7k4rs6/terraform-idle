@@ -21,11 +21,12 @@
 <canvas id="c" tabindex="0" role="button" aria-label="Your planet. Tap it, or press Enter or Space, to collect life. When a golden comet or a supply crate is in the sky, Enter or Space catches it. M taps the moon. Open systems with the buttons at the bottom or keys 1 to 6."></canvas>
 <header id="top">
   <button id="goal"><span id="gtext"></span><span id="grew"></span></button>
+  <button id="gear" aria-label="Settings" aria-controls="settings"></button>
 </header>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="contract" role="status" hidden></div>
 <aside id="side">
-  <div class="box"><div id="life"></div><div id="rate"></div><button id="gear" aria-label="Settings" aria-controls="settings"></button></div>
+  <div class="box"><div id="life"></div><div id="rate"></div></div>
   <div class="box"><div id="wname"></div><small id="wtrait"></small><small id="wtime" aria-label="Run time"></small><div id="heal" role="progressbar" aria-label="Terraformed" aria-valuemin="0" aria-valuemax="100"><div id="healbar"></div></div><div id="healtxt"></div></div>
 </aside>
 <!-- before the bar so the commander stands behind it -->

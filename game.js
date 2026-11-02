@@ -544,6 +544,7 @@ function layout() {
   $('side').style.top = top * PX + 12 + 'px';
   const sr = $('side').getBoundingClientRect();
   $('toast').style.top = (innerWidth < 640 ? sr.bottom + 10 : top * PX + 12) + 'px'; // phones: under the stat boxes, full width
+  $('gear').style.height = $('goal').offsetHeight + 'px'; // the corner gear lines up with the goal bar
   $('contract').style.top = top * PX + 12 + 'px'; // a right-hand column level with the stat boxes: clear of the goal bar and the systems
   TOP = top + 4; SIDE = { r: sr.right / PX, b: sr.bottom / PX };
   GY = Math.round(H - bar - 14); // ground line
@@ -1793,7 +1794,7 @@ cv.addEventListener('pointerdown', e => {
   if (!W || !e.isPrimary || e.button > 0) return; // not laid out yet; right/middle click and extra fingers are not taps
   const [ox, oy] = camOrigin(), x = (e.clientX / PX - ox) / cam.z, y = (e.clientY / PX - oy) / cam.z;
   if (comet && Math.hypot(x - comet.x, y - comet.y) <= HIT) return catchComet();
-  if (crate) { const [cx, cy] = cratePos(last); if (Math.abs(x - cx) <= 16 && y >= cy - 30 && y <= cy + 12) return openCrate(); } // crate or its parachute (a box, so it doesn't steal taps from the systems nearby)
+  if (crate) { const [cx, cy] = cratePos(last); if (Math.abs(x - cx) <= 17 && y >= cy - 32 && y <= cy + 12) return openCrate(); } // crate or its parachute (a box, so it doesn't steal taps from the systems nearby)
   let hit = -1, best = Infinity; // anywhere on a sprite (plus a finger's margin) counts; the nearest centre wins
   SYS.forEach((_, s) => {
     const [sx, sy] = sysPos(s, last), img = look(s).lit, d = Math.hypot(x - sx, y - sy);
@@ -1908,7 +1909,7 @@ function stepContract(dt) {
 const today = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; // YYYY-MM-DD, local time, any locale
 let crate = null, crateWait = 8; // crate: { side: -1 | 1, k: 0..1 descent }; first drop comes a few seconds into a session
 const cratePos = t => { // beside the planet's top, clear of the orbit systems; floats down, then bobs
-  const ty = Math.max(TOP + 34, CY - R0 * 1.05), e = 1 - (1 - crate.k) ** 3;
+  const ty = Math.max(TOP + 40, CY - R0 * 1.05), e = 1 - (1 - crate.k) ** 3;
   return [Math.round(CX + crate.side * R0 * .75), Math.round(-12 + (ty + 12) * e + (crate.k >= 1 && !calm() ? Math.sin(t * 2) * 2 : 0))];
 };
 function stepCrate(dt) {
@@ -1937,15 +1938,38 @@ function openCrate() {
   toast(`Supply drop: ${fmt(g)} life${seed ? ' and a Star Seed!' : '.'} Next one tomorrow.`, true);
   quip(QUIPS.crate, true); save();
 }
-const CRATE = tiny(['wwwwwwwww', 'wnnnpnnnw', 'wnnnpnnnw', 'wpppppppw', 'wnnnpnnnw', 'wnnnpnnnw', 'wwwwwwwww']);
+// Supply crate and its parachute, drawn and shaded like the machines.
+const CRATE = grit(art(24, 19, p => {
+  p.box(2, 5, 20, 14); // body
+  for (const y of [9, 13]) p.line(3, y, 20, y, C.dim); // planks
+  for (const x of [6, 17]) { p.fill(x, 6, 2, 12, C.line); p.line(x, 6, x, 17, C.dim); } // metal straps
+  p.box(0, 2, 24, 4); p.line(1, 4, 22, 4, C.dim); // lid with an overhang
+  p.box(10, 1, 4, 4); p.dot(11, 2, C.pink); p.dot(12, 2, C.pink); // latch
+  p.ring(12, 12, 6, 2, Math.PI, 2 * Math.PI, C.dim); p.disc(12, 12, 3, C.pink); p.ring(12, 12, 6, 2, 0, Math.PI); // Corps emblem: a ringed planet
+  for (const [x, y] of [[3, 7], [20, 7], [3, 17], [20, 17]]) p.dot(x, y, C.line); // rivets
+}), 5, diagLight);
+const CANOPY = grit(art(33, 13, p => {
+  for (let y = 0; y < 12; y++) { // dome in four gores, alternating pink and pale
+    const hw = Math.round(16 * Math.sqrt(1 - ((11 - y) / 11) ** 2));
+    for (let x = -hw; x <= hw; x++) p.dot(16 + x, y, Math.floor((x + 16) / 8.25) % 2 ? C.pink : C.line);
+  }
+  p.ring(16, 11, 16, 11, Math.PI, 2 * Math.PI, C.line);
+  for (let x = 0; x <= 32; x++) p.dot(x, 11 + (x % 8 > 3 ? 1 : 0), C.line); // scalloped hem
+  for (const x of [8, 16, 24]) p.line(x, 1, x, 11, C.dim); // gore seams
+}), 6, diagLight);
 function drawCrate(t) {
   if (!crate) return;
-  const [x, y] = cratePos(t);
-  for (let r = 13; r > 0; r--) P.ring(x, y - 18, r, r * .6, Math.PI, 2 * Math.PI, r > 11 ? C.line : r % 4 < 2 ? C.pink : C.bg); // striped canopy
-  P.fill(x - 13, y - 18, 27, 1, C.line);
-  for (const dx of [-12, 0, 12]) P.line(x + dx, y - 18, x + Math.sign(dx) * 6, y - 7, C.soft); // lines
-  ctx.drawImage(CRATE, x - 9, y - 7, 18, 14); // the crate at 2x
-  if (crate.k >= 1 && (calm() || Math.sin(t * 5) > 0)) P.fill(x + 11, y - 10, 3, 3, C.pink); // tap me
+  const [x, y] = cratePos(t), landed = crate.k >= 1;
+  if (landed) { // waiting: a slow gold glow and the odd sparkle
+    ctx.globalAlpha = .3 + .2 * (calm() ? 1 : Math.sin(t * 3));
+    for (const d of [15, 17]) P.ring(x, y, d, d * .8, 0, 2 * Math.PI, C.sun);
+    ctx.globalAlpha = 1;
+    if (!calm() && Math.random() < .08) parts.push({ x: x + (Math.random() - .5) * 26, y: y + 6, vx: 0, vy: -14, life: .9, color: C.sun });
+  }
+  for (const [hx, cx] of [[-15, -11], [-6, -6], [6, 6], [15, 11]]) P.line(x + hx, y - 18, x + cx, y - 8, C.soft); // lines from hem to lid
+  blit(CANOPY, x, y - 25);
+  blit(CRATE, x, y);
+  if (landed && (calm() || Math.sin(t * 5) > 0)) P.fill(x + 13, y - 12, 3, 3, C.pink); // tap me
 }
 
 // ---------- sector cinematic: after the last world of a cycle, all eight worlds alive in a row, the Commander's speech, then the warp ----------
