@@ -25,7 +25,7 @@ const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 
 // seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done;
 // done: this world is at 100% (the warp is waiting); best: fastest time to heal each world, by name
 // ach: achievement ids earned; n: lifetime counters the achievements watch (crits, comets caught, taps in meteor showers, longest time away in s)
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0 }, daily: '' }; // daily: local date of the last supply drop opened
+const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0 }, daily: '' }; // daily: local date of the last supply drop opened
 console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
 const has = id => S.tal.includes(id);
 const boost = () => (has('echo') ? 2.5 : 2) ** S.world; // every world you finish multiplies all output for good
@@ -713,6 +713,7 @@ function drawLife(t, heal) {
   }
   ctx.globalAlpha = 1;
 }
+let moonAt = null, moonI = 0, moonReady = 0;
 function drawMoon(x, y, k) { // k: 0..1 while it grows in
   const r = Math.max(1, Math.round(R * .12 * k));
   for (let dy = -r; dy <= r; dy++) { const dx = Math.round(Math.sqrt(r * r - dy * dy)); P.fill(x - dx, y + dy, dx * 2 + 1, 1, C.soft); P.fill(x + Math.round(r * .3), y + dy, Math.max(0, dx - Math.round(r * .3)) + 1, 1, C.dim); }
@@ -806,6 +807,7 @@ function draw(t, heal) {
   // milestones ease in over a few % of healing instead of popping: moon at 25%, clouds at 50%, rings at 75%
   const ramp = at => Math.max(0, Math.min(1, (heal - at) / .03)), mo = ramp(.25), ck = ramp(.5), rk = ramp(.75), rr = R * (1.1 + .28 * rk);
   if (rk) P.ring(CX, CY, rr, rr * .145, Math.PI, 2 * Math.PI);
+  moonAt = mo ? { x: moon[0], y: moon[1], r: Math.max(1, Math.round(R * .12 * mo)), front } : null; // for taps
   if (mo && !front) drawMoon(...moon, mo);
   compose(t, heal);
   globe(comp, off);
@@ -1013,6 +1015,7 @@ const ACH = [
   ['rich', 'Millionaire', 'Hold a million life at once.', () => S.life >= 1e6],
   ['combo', 'Combo Master', 'Chain 25 taps in a row.', () => S.n.combo >= 25],
   ['crate', 'Supply Run', 'Open a daily supply drop.', () => S.n.crates > 0],
+  ['moonie', 'Moonstruck', 'Find out what happens when you tap the moon.', () => S.n.moon > 0],
 ].map(([id, name, desc, test]) => ({ id, name, desc, test }));
 function checkAch() { // 10x a second from updateUI; each test is a few comparisons
   for (const a of ACH) if (!S.ach.includes(a.id) && a.test()) { S.ach.push(a.id); toast(`ACHIEVEMENT: ${a.name}. ${a.desc}`, true); play('talent'); }
@@ -1620,7 +1623,7 @@ function load() {
   const v = d.S, prev = S.world;
   Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world,
     on: v.on, L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0), done: v.done ?? false, best: v.best ?? {},
-    ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, ...(v.n || {}) }, daily: v.daily ?? '',
+    ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, ...(v.n || {}) }, daily: v.daily ?? '',
     seeds: v.seeds ?? v.world, tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
   const was = SYS.map(sy => sy.id).join();
   setLoadout(S.world);
@@ -1665,6 +1668,7 @@ cv.addEventListener('pointerdown', e => {
     if (Math.abs(x - sx) <= img.width / 2 + HIT / 2 && Math.abs(y - sy) <= img.height / 2 + HIT / 2 && d < best) { best = d; hit = s; }
   });
   if (hit >= 0) return openPanel(hit);
+  if (moonAt && Math.hypot(x - moonAt.x, y - moonAt.y) <= moonAt.r + 3 && (moonAt.front || (x - CX) ** 2 + (y - CY) ** 2 > R * R)) return tapMoon(); // after the systems, so a passing moon never steals their taps; behind the planet: only the part that shows
   if (y >= GY) return; // the ground is solid
   if ((x - CX) ** 2 + (y - CY) ** 2 > R * R) return closePanel();
   tapPlanet(x, y);
@@ -1744,6 +1748,17 @@ function stepCrate(dt) {
   if (S.daily === today() || !S.intro || !S.on[0] || $('c').inert || (crateWait -= dt) > 0) return;
   crate = { side: Math.random() < .5 ? -1 : 1, k: 0 };
   toast('SUPPLY DROP incoming. Tap the crate to open it.', true); play('ui');
+}
+// Easter egg: the moon answers a tap with a fact and a little life, once every 3 s.
+function tapMoon() {
+  if (last < moonReady) return;
+  moonReady = last + 3;
+  const g = tapGain() * 5;
+  S.life += g; S.earned += g; S.n.moon = (S.n.moon || 0) + 1;
+  burst(moonAt.x, moonAt.y, [C.soft, C.line], 16, 30); play('coin');
+  floats.push({ x: moonAt.x, y: moonAt.y - moonAt.r - 6, text: '+' + fmt(g), life: 1.4, col: C.soft });
+  toast(MOON_FACTS[moonI++ % MOON_FACTS.length]);
+  if (S.n.moon === 1 || S.n.moon % 5 === 0) quip(QUIPS.moon);
 }
 function openCrate() {
   const [x, y] = cratePos(last), g = Math.max(500, rateOf() * 600), seed = Math.random() < .1;

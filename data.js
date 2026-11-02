@@ -123,6 +123,15 @@ const STAGES = [
   { at: .5, name: 'clouds', text: 'CLOUD LAYER FORMED. Earth bounces about 30% of incoming sunlight back to space, much of it off clouds.' },
   { at: .75, name: 'rings', text: 'RINGS FORMED. Saturn’s rings are billions of ice chunks, some as big as houses.' },
 ];
+// Tapping the moon (an easter egg) reads one of these, in turn.
+const MOON_FACTS = [
+  'Our Moon drifts about 3.8 cm farther from Earth every year.',
+  'The Moon probably formed when a Mars-sized world smashed into the young Earth.',
+  'The Moon always shows Earth the same face: it is tidally locked.',
+  'Saturn’s moon Enceladus sprays water geysers into space from an ocean under its ice.',
+  'Jupiter’s moon Io is the most volcanic place in the solar system.',
+  'Neptune’s moon Triton orbits backwards and will one day be torn apart by tides.',
+];
 // A line is { text, until, hint }: with `until` the game stays playable and the line moves on by itself once until() is true.
 const INTRO = [
   { text: 'Welcome to the front line, Engineer. I run Terraform Corps out here.' },
