@@ -159,3 +159,4 @@ html.calm #guide.talk #gface { animation: none; } /* reduced motion: the command
 #guide.quip #gbox { margin-left: 8px; }
 #guide.quip #gbubble { width: min(340px, calc(100vw - 40px)); }
 #guide.quip #gbubble::before { display: none; } /* no portrait to point at */
+#wtime { display: block; color: var(--soft); font-size: .8rem; font-variant-numeric: tabular-nums; }

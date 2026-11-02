@@ -1102,6 +1102,8 @@ function updateUI() {
   const cycle = Math.floor(S.world / WORLDS.length);
   $('wname').textContent = world().name + (cycle ? ' ' + roman(cycle + 1) : '');
   $('wtrait').textContent = trait().text || '';
+  const best = S.best[world().name], clock = n => `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}`;
+  $('wtime').textContent = S.done ? `healed · best ${clock(best)}` : clock(Math.max(0, last - S.start)) + (best !== undefined ? ` · best ${clock(best)}` : ''); // frozen once healed
   const h = pct(), ns = STAGES.find(st => healOf(S.earned) < st.at); // next milestone
   $('healbar').style.width = h + '%';
   $('healtxt').textContent = `${h}% terraformed` + (ns ? ` · ${ns.name} at ${ns.at * 100}%` : '');
