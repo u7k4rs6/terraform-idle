@@ -24,14 +24,15 @@ const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 
 
 // seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done;
 // done: this world is at 100% (the warp is waiting); best: fastest time to heal each world, by name
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {} };
+// ach: achievement ids earned; n: lifetime counters the achievements watch (crits, comets caught, taps in meteor showers, longest time away in s)
+const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0 } };
 console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
 const has = id => S.tal.includes(id);
 const boost = () => (has('echo') ? 2.5 : 2) ** S.world; // every world you finish multiplies all output for good
 // Talent multipliers: on everything, and on pairs of systems.
 const allMul = () => (has('roots') ? 1.25 : 1) * (has('bloom') ? 1.5 : 1) * (has('gaia') ? 2 : 1) * (has('kinetic') ? 1 + Math.min(1, S.taps / 1e4) : 1);
 const PAIR = { lens: [0, 1], swarm: [2, 3], grow: [4, 5] };
-const sysOut = s => sysRate(s, S.L[s]) * boost() * allMul() * ((SLOT[s].ground ? trait().ground : trait().orbit) || 1)
+const sysOut = s => sysRate(s, S.L[s]) * boost() * allMul() * ((SLOT[s].ground ? trait().ground : trait().orbit) || 1) * (ev?.id === 'flare' ? 2 : 1)
   * Object.entries(PAIR).reduce((m, [id, ss]) => (has(id) && ss.includes(s) ? m * 2 : m), 1);
 const rateOf = () => SYS.reduce((a, _, s) => a + (S.on[s] ? sysOut(s) : 0), 0);
 const tapGain = () => (tapOf(rateOf()) * (has('spark') ? 3 : 1) + (has('tapecho') ? rateOf() : 0)) * (trait().tap || 1); // one tap, before a crit
@@ -303,7 +304,25 @@ const ART = {
     p.ring(17, 16, 12, 3, 0, Math.PI); // field ring, front half
   }),
 };
-const LOOKS = Object.fromEntries(Object.entries(ART).map(([id, a], i) => [id, { next: shadow(a, false), sil: shadow(a, true), lit: grit(a, i, diagLight) }]));
+// Marks: a system's look grows with its best upgrade (Lv 10 / 25 / 50): the pink accents turn cyan, gold, then white (Mark IV also glows).
+const MARK_AT = [10, 25, 50], MARK = ['I', 'II', 'III', 'IV'];
+const MARKS = [['#8fe3ff', '#4a90b0'], ['#ffe08a', '#b08a3a'], ['#ffffff', '#9aa3c4']].map(m => m.map(rgb));
+const markOf = s => MARK_AT.filter(n => Math.max(...S.L[s]) >= n).length;
+function recolour(src, [light, dark]) { // grit()'s pink pair -> this mark's pair
+  const c = mk(src.width, src.height), g = c.getContext('2d');
+  g.drawImage(src, 0, 0);
+  const im = g.getImageData(0, 0, c.width, c.height), d = im.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const k = d[i] === 240 && d[i + 1] === 163 ? light : d[i] === 168 && d[i + 1] === 86 ? dark : null;
+    if (k) { d[i] = k[0]; d[i + 1] = k[1]; d[i + 2] = k[2]; }
+  }
+  g.putImageData(im, 0, 0);
+  return c;
+}
+const LOOKS = Object.fromEntries(Object.entries(ART).map(([id, a], i) => {
+  const lit = grit(a, i, diagLight);
+  return [id, { next: shadow(a, false), sil: shadow(a, true), lit, marks: [lit, ...MARKS.map(m => recolour(lit, m))] }];
+}));
 const look = s => LOOKS[SYS[s].id]; // the sprites of whatever system holds slot s
 
 // Small sprites drawn as-is: w = line, n = fill, p = pink.
@@ -320,7 +339,7 @@ const T = {
   energy: tiny(['..www..', '.wwwww.', 'wwwnwww', 'wwnnnww', 'wwwnwww', '.wwwww.', '..www..']),
 };
 const ICON = `<img class="ico" src="${T.energy.toDataURL()}" alt="life">`;
-const TILE = Object.fromEntries(Object.entries(LOOKS).map(([id, l]) => [id, { lit: l.lit.toDataURL(), sil: l.sil.toDataURL(), next: l.next.toDataURL() }]));
+const TILE = Object.fromEntries(Object.entries(LOOKS).map(([id, l]) => [id, { lit: l.lit.toDataURL(), sil: l.sil.toDataURL(), next: l.next.toDataURL(), marks: l.marks.map(c => c.toDataURL()) }]));
 
 // 3x5 pixel font for numbers on the canvas (smooth canvas text would blur when scaled).
 const GLYPH = { 0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001', 5: '111100111001111', 6: '111100111101111', 7: '111001001001001', 8: '111101111101111', 9: '111101111001111',
@@ -628,7 +647,7 @@ function land(s, x, y, real, quiet) { // quiet: extra chunks of a spray, no pop-
   if (quiet) return;
   if (real) { const [u, v] = texPos(x, y); items.push({ u, v, born: last }); if (items.length > 300) items.splice(0, items.length - 150); }
   // damage pop-up: what this system earns per shot, so the numbers match the real income
-  floats.push({ x, y: y - 8, text: '+' + fmt(sysOut(s) * cadence(s)), life: 1.4, col: '#ffd6e0' }); // light pink: readable on any planet
+  floats.push({ x, y: y - 8, text: '+' + fmt(sysOut(s) * cadence(s) * (ev?.id === 'flare' ? .5 : 1)), life: 1.4, col: '#ffd6e0' }); // light pink: readable on any planet; a flare fires twice as often
   if (floats.length > 14) floats.shift(); // keep the sky readable
 }
 
@@ -720,8 +739,9 @@ const canAct = s => S.on[s] ? S.L[s].some((l, k) => l < MAXL && S.life >= price(
 
 // A system: shaded line-art when unlocked, dim outline when next, dotted silhouette otherwise.
 function drawSystem(s, t) {
-  const lk = look(s), img = S.on[s] ? lk.lit : unlocked(s) ? lk.next : lk.sil;
-  blit(img, ...sysPos(s, t));
+  const lk = look(s), m = S.on[s] ? markOf(s) : 0, img = S.on[s] ? lk.marks[m] : unlocked(s) ? lk.next : lk.sil, [x, y] = sysPos(s, t);
+  if (m === 3) { ctx.globalAlpha = .25 + .15 * (calm() ? 1 : Math.sin(t * 3)); P.ring(x, y, img.width / 2 + 4, img.height / 2 + 4, 0, 2 * Math.PI, C.sun); ctx.globalAlpha = 1; } // Mark IV halo
+  blit(img, x, y);
 }
 // Labels, price tags, pink dots and selection brackets go on top of every system, so nothing hides them.
 function drawMarks(s, t) {
@@ -734,6 +754,7 @@ function drawMarks(s, t) {
     text(label, left + 9 + lw / 2, y0 - 8, C.soft);
   }
   if (canAct(s)) P.fill(x0 + w + 1, y0 - 4, 3, 3, C.pink);
+  if (on) for (let k = 0; k < markOf(s); k++) P.fill(x0 + w + 1, y0 + 2 + k * 4, 3, 3, C.sun); // mark pips down the right side
   if (sel === s) { // blinking selection brackets
     const col = calm() || Math.sin(t * 6) > 0 ? C.line : C.soft, l = x0 - 4, r = x0 + w + 3, tp = y0 - 4, bt = y0 + h + 3;
     for (const [bx, by, dx, dy] of [[l, tp, 1, 1], [r, tp, -1, 1], [l, bt, 1, -1], [r, bt, -1, -1]]) { P.fill(Math.min(bx, bx + dx * 4), by, 5, 1, col); P.fill(bx, Math.min(by, by + dy * 4), 1, 5, col); }
@@ -744,7 +765,7 @@ function draw(t, heal) {
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
   for (const [x, y, k] of stars) if (x < W && y < H && (k || Math.sin(t * 2 + x) > -.5)) P.dot(x, y, k > 4 ? C.soft : C.dot);
   // atmosphere: the world's dead glow fading to its alive glow (colour stepped so the dithered ring is rarely rebuilt)
-  const { dg, ag } = world(), c = dg.map((d, k) => Math.round(d + (ag[k] - d) * heal) & ~7).join(',');
+  const { dg, ag } = world(), c = ev?.id === 'flare' ? '255,224,136' : dg.map((d, k) => Math.round(d + (ag[k] - d) * heal) & ~7).join(','); // a flare lights the whole atmosphere gold
   const halo = haloRing(c), hs = Math.round(halo.width * R / Math.round(R0)); // hs = halo size at the current (zoomed) radius
   ctx.drawImage(halo, Math.round(CX - hs / 2), Math.round(CY - hs / 2), hs, hs);
 
@@ -796,6 +817,12 @@ function draw(t, heal) {
       }
     } else for (let o = 0; o < (b.w || 1); o++) P.line(b.x1 + o, b.y1, b.x2 + o, b.y2, b.col);
     if (b.end) P.fill(b.x2 - 1, b.y2 - 1, 3, 3, C.line);
+  }
+  for (const m of meteors) { P.line(m.x - m.vx * .08, m.y - m.vy * .08, m.x, m.y, C.sun); P.dot(m.x, m.y, C.line); } // streaks
+  if (comet) { // gold head with a long fading tail; the pulsing ring says "tap me"
+    for (let k = 1; k < 22; k++) { ctx.globalAlpha = 1 - k / 22; for (const dy of [0, 1]) P.dot(comet.x - k * 2, comet.y + dy + (k > 8 ? Math.round(Math.sin(k * .7 + t * 8)) : 0), k < 8 ? C.sun : C.soft); }
+    ctx.globalAlpha = .5 + .3 * (calm() ? 1 : Math.sin(t * 6)); P.ring(comet.x, comet.y, 7, 7, 0, 2 * Math.PI, C.sun);
+    ctx.globalAlpha = 1; P.fill(comet.x - 2, comet.y - 2, 5, 5, C.sun); P.fill(comet.x - 1, comet.y - 1, 3, 3, C.line);
   }
   for (const q of parts) { ctx.globalAlpha = q.life; P.dot(q.x, q.y, q.color); }
   for (const f of floats) { ctx.globalAlpha = f.life; text(f.text, f.x, f.y, f.col); }
@@ -919,6 +946,35 @@ function musicStep(s, t) {
   if (beat === 10 && Math.random() < .4) tone({ ...m, f: mtof(SPARK[Math.random() * SPARK.length | 0] + 12), type: 'sine', dur: STEP * 10, vol: .03, attack: .05, release: .8 }); // sparkle
 }
 
+// ---------- achievements: lifetime trophies, listed in the settings sheet ----------
+const ACH = [
+  ['light', 'First Light', 'Unlock your first system.', () => S.on.some(Boolean)],
+  ['house', 'Full House', 'Six systems online on one world.', () => S.on.every(Boolean)],
+  ['mk2', 'Refit', 'Raise any upgrade to Lv 10 (Mark II).', () => S.L.flat().some(l => l >= MARK_AT[0])],
+  ['mk4', 'Flagship', 'Max out an upgrade (Lv 50, Mark IV).', () => S.L.flat().some(l => l >= MAXL)],
+  ['tap100', 'Warm Hands', 'Tap the planet 100 times.', () => S.taps >= 100],
+  ['tap1k', 'Calloused', 'Tap the planet 1,000 times.', () => S.taps >= 1000],
+  ['tap10k', 'Kinetic', 'Tap the planet 10,000 times.', () => S.taps >= 1e4],
+  ['crit', 'Lucky Strike', 'Land a critical tap.', () => S.n.crit > 0],
+  ['moon', 'Moonrise', 'Capture a moon (25%).', () => healOf(S.earned) >= .25],
+  ['rings', 'Ringed', 'Grow rings around a world (75%).', () => healOf(S.earned) >= .75],
+  ['world', 'Green Thumb', 'Heal your first world.', () => S.world >= 1 || S.done],
+  ['speed', 'Speedrunner', 'Heal a world in under 5 minutes.', () => Object.values(S.best).some(s => s < 300)],
+  ['sector', 'Sector Chief', `Heal all ${WORLDS.length} worlds.`, () => S.world >= WORLDS.length],
+  ['talent', 'Gifted', 'Unlock a talent.', () => S.tal.length > 0],
+  ['comet', 'Comet Catcher', 'Catch a golden comet.', () => S.n.comet > 0],
+  ['storm', 'Storm Chaser', 'Tap 100 times during meteor showers.', () => S.n.storm >= 100],
+  ['night', 'Night Owl', 'Come back to an hour or more of offline earnings.', () => S.n.away >= 3600],
+  ['rich', 'Millionaire', 'Hold a million life at once.', () => S.life >= 1e6],
+].map(([id, name, desc, test]) => ({ id, name, desc, test }));
+function checkAch() { // 10x a second from updateUI; each test is a few comparisons
+  for (const a of ACH) if (!S.ach.includes(a.id) && a.test()) { S.ach.push(a.id); toast(`ACHIEVEMENT: ${a.name}. ${a.desc}`, true); play('talent'); }
+}
+function renderAch() {
+  $('acount').textContent = `${S.ach.length}/${ACH.length}`;
+  set($('alist'), ACH.map(a => `<li class="${S.ach.includes(a.id) ? 'on' : ''}"><b>${a.name}</b><small>${a.desc}</small></li>`).join(''));
+}
+
 // ---------- settings: toggles, save code, new game (gear button in the life box) ----------
 const GEAR = tiny(['...www...', '.w.wnw.w.', '.wwwnwww.', '.wn...nw.', 'www...www', '.wn...nw.', '.wwwnwww.', '.w.wnw.w.', '...www...']);
 $('gear').innerHTML = `<img src="${GEAR.toDataURL()}" alt="">`;
@@ -964,6 +1020,7 @@ function openSettings() {
   play('ui'); closePanel();
   setOpener = document.activeElement;
   $('settings').hidden = false; shield(true);
+  renderAch();
   $('sclose').focus({ preventScroll: true });
 }
 function closeSettings() {
@@ -1021,13 +1078,14 @@ function updateUI() {
   }
   tiles.forEach((b, s) => {
     const ts = TILE[SYS[s].id];
-    set(b, `<img src="${S.on[s] ? ts.lit : unlocked(s) ? ts.next : ts.sil}" alt="">`);
+    set(b, `<img src="${S.on[s] ? ts.marks[markOf(s)] : unlocked(s) ? ts.next : ts.sil}" alt="">`);
     b.setAttribute('aria-label', SYS[s].name);
     b.classList.toggle('ok', canAct(s));
     b.classList.toggle('sel', sel === s);
     b.setAttribute('aria-expanded', sel === s);
   });
   talTile.classList.toggle('ok', S.seeds > 0 && TAL.some(canTal));
+  checkAch();
   updateGuide();
   if (W && hudH() !== layoutH) resize(); // goal text wrapped or the HUD changed size: re-fit the scene below it
 
@@ -1063,10 +1121,11 @@ function rowClick(k) {
     toast(sy.fact);
     burst(x, y, [C.line, C.pink, C.soft], 40, 60);
   } else {
-    const L = S.L[s], [n, c] = bulkOf(s, k);
+    const L = S.L[s], [n, c] = bulkOf(s, k), m0 = markOf(s);
     if (!n || S.life < c) return play('deny');
     S.life -= c; L[k] += n; play('buy');
     burst(x, y, [C.pink, C.line], 14 + 2 * n, 40);
+    if (markOf(s) > m0) { toast(`${sy.name} refit: Mark ${MARK[markOf(s)]}.`); play('talent'); burst(x, y, [C.sun, C.line], 30, 50); }
   }
   fire(s, true);
   updateUI();
@@ -1255,13 +1314,17 @@ function openWarp() {
   const n = S.world + 1, next = WORLDS[n % WORLDS.length].name, mult = fmt(boost() * (has('echo') ? 2.5 : 2)), end = n % WORLDS.length === 0;
   $('warph').textContent = end ? 'Sector terraformed' : 'Planet terraformed';
   $('warptxt').textContent = end // every world in the cycle is alive: the planet log, then the next cycle
-    ? `All ${WORLDS.length} worlds are alive. Best times: ${WORLDS.map(w => `${w.name} ${mmss(S.best[w.name] ?? 0)}`).join(', ')}. ${S.taps} taps in all. Cycle ${roman(n / WORLDS.length + 1)} starts back at ${next}, with all output x${mult} forever.`
+    ? `All ${WORLDS.length} worlds are alive. Best times: ${WORLDS.map(w => `${w.name} ${mmss(S.best[w.name] ?? 0)}`).join(', ')}. ${S.taps} taps and ${S.ach.length}/${ACH.length} achievements in all. Cycle ${roman(n / WORLDS.length + 1)} starts back at ${next}, with all output x${mult} forever.`
     : `${world().name} is alive. Took ${mmss(S.best[world().name])}. Next stop: ${next}, with all output x${mult} forever. You also earn a Star Seed to spend on Talents.`;
   $('warpbtn').textContent = end ? `Begin cycle ${roman(n / WORLDS.length + 1)} >>` : 'Warp to next world >>';
   closePanel(); closeTalents(); closeSettings();
   $('warp').hidden = false; shield(true);
   $('warpbtn').focus();
 }
+$('warpshare').addEventListener('click', async () => { // brag: the system share sheet, or the clipboard
+  const text = `I brought ${world().name} back to life in ${mmss(S.best[world().name] ?? 0)} in TERRAFORM, a pixel idle game.`, url = 'https://utkarshbahuguna.me/terraform-idle/';
+  try { if (navigator.share) await navigator.share({ title: 'Terraform', text, url }); else { await navigator.clipboard.writeText(`${text} ${url}`); flashBtn($('warpshare'), 'Copied'); } } catch { /* dismissed */ }
+});
 $('warpstay').addEventListener('click', () => { // admire the living planet; the goal bar keeps the warp ready
   $('warp').hidden = true; shield(false); play('ui');
   $('goal').focus({ preventScroll: true });
@@ -1414,6 +1477,7 @@ function nextLine() {
   if (gIntro) { S.intro = true; save(); }
 }
 $('gbubble').addEventListener('click', () => {
+  if (!gLines[gi]) return; // nothing to say (a stale click after the briefing closed)
   const full = val(gLines[gi].text);
   if (gShown < full.length) { gShown = full.length - 1; return; } // first tap finishes the line
   if (!gLines[gi].until) nextLine();
@@ -1438,7 +1502,7 @@ function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
-      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro, done: S.done, best: S.best },
+      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n },
       items: items.slice(-150).map(it => [Math.round(it.u), Math.round(it.v)]),
     }));
   } catch { /* private mode or full storage: keep playing unsaved */ }
@@ -1454,7 +1518,9 @@ const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
   && optional(d.S.intro, v => typeof v === 'boolean') && optional(d.S.done, v => typeof v === 'boolean')
   && optional(d.S.seeds, v => Number.isInteger(v) && v >= 0 && v <= 60)
   && optional(d.S.tal, v => Array.isArray(v) && v.every(id => TAL.some(t => t.id === id)))
-  && optional(d.S.best, v => !!v && typeof v === 'object' && Object.entries(v).every(([k, s]) => WORLDS.some(w => w.name === k) && Number.isInteger(s) && s >= 0));
+  && optional(d.S.best, v => !!v && typeof v === 'object' && Object.entries(v).every(([k, s]) => WORLDS.some(w => w.name === k) && Number.isInteger(s) && s >= 0))
+  && optional(d.S.ach, v => Array.isArray(v) && v.every(id => ACH.some(a => a.id === id)))
+  && optional(d.S.n, v => !!v && typeof v === 'object' && Object.values(v).every(x => Number.isFinite(x) && x >= 0));
 console.assert(!validSave({ t: 1, S: { life: 0, earned: 0, taps: 0, goal: 0, world: 0, on: [false, true, false, false, false, false], L: SYS.map(() => [0, 0, 0]) } }), 'save: out-of-order unlock');
 console.assert(validSave({ t: 1, S: { life: 5, earned: 5, taps: 1, goal: 0, world: 0, on: [true, false, false, false, false, false], L: [[1, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]] } }), 'save: minimal old save');
 // Restores the save and credits the time since it was written. Returns false if there was nothing usable.
@@ -1468,6 +1534,7 @@ function load() {
   const v = d.S, prev = S.world;
   Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world,
     on: v.on, L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0), done: v.done ?? false, best: v.best ?? {},
+    ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, ...(v.n || {}) },
     seeds: v.seeds ?? v.world, tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
   const was = SYS.map(sy => sy.id).join();
   setLoadout(S.world);
@@ -1482,6 +1549,7 @@ function load() {
 function away(since) {
   const sec = Math.min(awayCap(), Math.max(0, (Date.now() - since) / 1000)), gain = rateOf() * sec * (has('dream') ? 2 : 1);
   S.life += gain; S.earned += gain; // always credit, even a few seconds in another tab
+  S.n.away = Math.max(S.n.away, Math.round(sec));
   if (sec >= 30 && gain > 0) {
     const h = sec / 3600 | 0, m = (sec % 3600) / 60 | 0;
     toast(`WELCOME BACK. In ${h ? h + 'h ' : ''}${m}m away your colony made ${fmt(gain)} life.`, true);
@@ -1502,6 +1570,7 @@ setInterval(() => { if (!document.hidden) save(); }, 5000); // while hidden the 
 cv.addEventListener('pointerdown', e => {
   if (!W || !e.isPrimary || e.button > 0) return; // not laid out yet; right/middle click and extra fingers are not taps
   const [ox, oy] = camOrigin(), x = (e.clientX / PX - ox) / cam.z, y = (e.clientY / PX - oy) / cam.z;
+  if (comet && Math.hypot(x - comet.x, y - comet.y) <= HIT) return catchComet();
   let hit = -1, best = Infinity; // anywhere on a sprite (plus a finger's margin) counts; the nearest centre wins
   SYS.forEach((_, s) => {
     const [sx, sy] = sysPos(s, last), img = look(s).lit, d = Math.hypot(x - sx, y - sy);
@@ -1520,13 +1589,48 @@ cv.addEventListener('keydown', e => {
 });
 const tapSomewhere = () => tapPlanet(CX + (Math.random() - .5) * R, CY - R * (.2 + Math.random() * .5)); // a spot on the visible face
 function tapPlanet(x, y) {
-  const crit = Math.random() < (has('crit2') ? .2 : has('crit') ? .1 : 0); // Lucky Strike / Jackpot
-  const g = tapGain() * (crit ? 10 : 1);
+  const crit = Math.random() < (has('crit2') ? .2 : has('crit') ? .1 : 0), storm = ev?.id === 'shower'; // Lucky Strike / Jackpot; meteor showers pay x5
+  const g = tapGain() * (crit ? 10 : 1) * (storm ? 5 : 1);
   S.life += g; S.earned += g; S.taps++;
+  if (crit) S.n.crit++;
+  if (storm) S.n.storm++;
   if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.pink, end: true }); }
   burst(x, y, crit ? [C.sun, C.line, C.pink] : [C.line, C.pink], crit ? 24 : 10);
   play(crit ? 'crit' : 'tap');
   floats.push({ x, y: y - 8, text: '+' + fmt(g), life: 1, col: crit ? C.sun : C.line });
+}
+
+// ---------- events: every few minutes at the screen, a surprise that pays for being there ----------
+const EVENTS = {
+  shower: { name: 'METEOR SHOWER', dur: 15, text: 'Taps pay x5 while it lasts.' },
+  flare: { name: 'SOLAR FLARE', dur: 12, text: 'Every system fires double.' },
+  comet: { name: 'GOLDEN COMET', dur: 9, text: 'Tap it before it leaves: a minute of income.' },
+};
+let ev = null, evT = 0, evNext = 150 + Math.random() * 90, comet = null; // evNext: seconds of play until the next event
+const meteors = [];
+function startEvent(id = Object.keys(EVENTS)[Math.random() * 3 | 0]) {
+  ev = { ...EVENTS[id], id }; evT = ev.dur;
+  if (id === 'comet') comet = { x: -16, y: TOP + 20 + Math.random() * Math.max(10, CY - R - TOP - 50), vx: (W + 32) / ev.dur }; // crosses the open sky above the planet
+  toast(`${ev.name}! ${ev.text}`, true); play('milestone'); shake = .5;
+}
+function endEvent() { ev = null; comet = null; evNext = 120 + Math.random() * 120; }
+function catchComet() {
+  const g = Math.max(100, rateOf() * 60);
+  S.life += g; S.earned += g; S.n.comet++;
+  burst(comet.x, comet.y, [C.sun, C.line, C.pink], 40, 70); play('crit'); shake = .6;
+  floats.push({ x: comet.x, y: comet.y - 10, text: '+' + fmt(g), life: 1.6, col: C.sun });
+  endEvent();
+}
+function stepEvents(dt) {
+  if (ev) { if ((evT -= dt) <= 0) endEvent(); }
+  else if (S.on[0] && !$('c').inert && (evNext -= dt) <= 0) startEvent(); // not during the tutorial or behind a dialog
+  if (ev?.id === 'shower' && Math.random() < dt * 12) meteors.push({ x: Math.random() * W, y: TOP, vx: -40 - Math.random() * 40, vy: 110 + Math.random() * 50 });
+  for (const m of meteors) {
+    m.x += m.vx * dt; m.y += m.vy * dt;
+    if (Math.hypot(m.x - CX, m.y - CY) < R || m.y > GY || m.x < -10) { m.dead = true; if (m.y < GY) burst(m.x, m.y, [C.sun, C.line], 6, 30); }
+  }
+  meteors.splice(0, meteors.length, ...meteors.filter(m => !m.dead));
+  if (comet) comet.x += comet.vx * dt;
 }
 
 // ---------- loop ----------
@@ -1554,6 +1658,7 @@ function step(ms) {
 
   const reached = STAGES.filter(s => heal >= s.at).length;
   if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); shake = .8; play('milestone'); }
+  stepEvents(dt);
   zoom += (1 - zoom) * Math.min(1, dt * 1.5);
   R = Math.round(R0 * zoom);
 
@@ -1566,7 +1671,7 @@ function step(ms) {
   SYS.forEach((sy, s) => {
     if (!S.on[s] || t < (sy.next || 0) || shots.length + beams.length >= 8) return;
     fire(s, false);
-    sy.next = t + cadence(s) * (.7 + Math.random() * .6);
+    sy.next = t + cadence(s) * (ev?.id === 'flare' ? .5 : 1) * (.7 + Math.random() * .6);
   });
   for (const s of shots) if ((s.t += dt) >= s.dur) { s.done = true; land(s.s, s.tx, s.ty, s.real, s.quiet); }
   shots.splice(0, shots.length, ...shots.filter(s => !s.done));

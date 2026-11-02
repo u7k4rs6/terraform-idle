@@ -124,7 +124,7 @@ html.embed #ttile { right: auto; left: calc(12px + env(safe-area-inset-left)); }
 #warp h2 { font-weight: normal; font-size: 1.5rem; }
 #warp p { margin: 10px 0 16px; color: var(--soft); }
 #warpbtn { padding: 10px 16px; background: var(--pink); color: var(--deep); }
-#warpstay { display: block; margin: 12px auto 0; padding: 4px 10px; border: 2px solid var(--dim); color: var(--soft); }
+
 
 /* settings: gear in the life box, a sheet of toggles, the save code and new game */
 .box { position: relative; }
@@ -147,3 +147,11 @@ html.embed #ttile { right: auto; left: calc(12px + env(safe-area-inset-left)); }
 #snew { margin-top: 10px; }
 #snew.arm { border-color: var(--pink); color: var(--pink); }
 html.calm #guide.talk #gface { animation: none; } /* reduced motion: the commander stays still while talking */
+#alist { list-style: none; padding: 0; max-height: 200px; overflow-y: auto; }
+#alist li { padding: 5px 0; border-bottom: 2px solid var(--bg); color: var(--dim); }
+#alist li b { display: block; font-weight: normal; }
+#alist li small { font-size: .8rem; }
+#alist li.on { color: var(--soft); }
+#alist li.on b { color: var(--pink); }
+#warp .srow { justify-content: center; border: 0; padding-top: 12px; }
+#warp .srow button { padding: 4px 10px; border: 2px solid var(--dim); color: var(--soft); }

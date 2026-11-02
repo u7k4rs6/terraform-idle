@@ -10,6 +10,9 @@ A pixel-art idle game: heal dead alien worlds with lasers, mirrors, drones, come
 
 - Tap the planet for Life, spend it on six systems per world, upgrade them (x1, x10 or MAX at a time) and watch the surface turn from rock to oceans and forests. A moon, clouds and rings arrive at 25%, 50% and 75%.
 - Eight worlds, each with its own palette, a trait that changes the economy (orbital or ground systems, taps, goal rewards) and a different set of systems. Every healed world doubles all output for good, hands you a Star Seed for the 20-talent tree, and the goal grows x4, so later worlds are faster but never trivial. After the eighth, the sector is logged with your best times and the cycle restarts.
+- Every few minutes at the screen something happens: a meteor shower (taps x5), a solar flare (every system fires double) or a golden comet to catch for a minute of income.
+- Systems refit as they level: Lv 10, 25 and 50 on any upgrade turn them Mark II, III and IV (cyan, gold, then white with a halo), on the planet and in the bar.
+- 18 achievements, listed in the settings sheet; a Share button on the warp screen.
 - Income runs on the wall clock: up to 12 hours (24 with Night Shift) are paid when you come back.
 - Keyboard: Enter/Space taps, `1`–`6` open a system, Esc closes. Screen readers get the HUD, panels and the commander's lines.
 - Settings (gear in the Life box): music, sound, reduced motion (also follows the system setting), large text, save code export/import, new game. Saves live in the browser only; the code is how you move one between devices.
