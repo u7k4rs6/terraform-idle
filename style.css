@@ -179,3 +179,8 @@ html.cine #gface, html.cine #gskip { display: none; }
 #cineskip[hidden] { display: none; }
 html.cine #gbubble::before { display: none; }
 html.cine #gbubble { width: min(420px, calc(100vw - 32px)); }
+/* auto-buy: switch in the panel header, an A on the tile while it runs */
+#pauto { height: 36px; padding: 0 8px; border: 2px solid var(--soft); color: var(--soft); }
+#pauto[hidden] { display: none; }
+#pauto[aria-pressed="true"] { background: var(--pink); border-color: var(--pink); color: var(--deep); }
+.tile.auto::before { content: "A"; position: absolute; left: 3px; top: 0; font-size: .7rem; color: var(--pink); }

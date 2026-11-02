@@ -30,7 +30,7 @@ const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 
 // seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done;
 // done: this world is at 100% (the warp is waiting); best: fastest time to heal each world, by name
 // ach: achievement ids earned; n: lifetime counters the achievements watch (crits, comets caught, taps in meteor showers, longest time away in s)
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0 }, daily: '', boon: '', offer: [], contract: null }; // boon: the warp boon on this world; offer: the 3 boons the waiting warp offers; contract: the open side job (data only) // daily: local date of the last supply drop opened
+const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0 }, daily: '', boon: '', offer: [], contract: null, auto: SYS.map(() => false) }; // auto: per slot, buy the cheapest upgrade by itself // boon: the warp boon on this world; offer: the 3 boons the waiting warp offers; contract: the open side job (data only) // daily: local date of the last supply drop opened
 console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
 console.assert(ucost(0, 0, 0) === 25 && ucost(0, 0, 1) === 31 && ucost(0, 2, 0) === 250, 'upgrade cost'); // world 0: price scale 1
 const has = id => S.tal.includes(id);
@@ -1174,6 +1174,7 @@ function updateUI() {
     set(b, `<img src="${S.on[s] ? ts.marks[markOf(s)] : unlocked(s) ? ts.next : ts.sil}" alt="">`);
     b.setAttribute('aria-label', SYS[s].name);
     b.classList.toggle('ok', canAct(s));
+    b.classList.toggle('auto', autoReady() && S.on[s] && S.auto[s]);
     b.classList.toggle('sel', sel === s);
     b.setAttribute('aria-expanded', sel === s);
   });
@@ -1191,6 +1192,8 @@ function updateUI() {
   if (sel < 0) return;
   const s = sel, sy = SYS[s], L = S.L[s];
   $('pname').textContent = sy.name;
+  const pa = $('pauto'); pa.hidden = !autoReady() || !S.on[s];
+  pa.setAttribute('aria-pressed', S.auto[s]); pa.setAttribute('aria-label', `Auto-buy upgrades for the ${sy.name}: ${S.auto[s] ? 'on' : 'off'}`);
   set($('pinfo'), S.on[s] ? `${ICON}${fmt(sysOut(s))}/s` : unlocked(s) ? `${ICON}${fmt(unlockCost(s))}` : 'locked');
   $('pfact').textContent = S.on[s] ? sy.fact : '';
   rows.forEach(({ r, text: el, buy }, k) => {
@@ -1210,6 +1213,26 @@ function updateUI() {
   });
 }
 
+function refit(s, m0) { // a purchase that crossed Lv 10 / 25 / 50: the system's new Mark
+  if (markOf(s) <= m0 || !W) return;
+  const [x, y] = sysPos(s, last);
+  toast(`${SYS[s].name} refit: Mark ${MARK[markOf(s)]}.`); play('talent'); buzz([20, 40, 20]); burst(x, y, [C.sun, C.line], 30, 50);
+  if (markOf(s) === 3) quip(QUIPS.mark4, true); else if (!S.ach.includes('mk2')) quip(QUIPS.mark2, true); // first refit ever
+}
+// Auto-buy (unlocked by healing the first world): a system with AUTO on buys its cheapest affordable upgrade, one level at a time.
+const autoReady = () => S.world >= 1;
+function autoBuy(s) {
+  if (!S.auto[s] || !S.on[s] || !autoReady()) return -1;
+  let k = -1;
+  for (let j = 0; j < 3; j++) if (S.L[s][j] < MAXL && (k < 0 || price(s, j) < price(s, k))) k = j;
+  if (k < 0 || S.life < price(s, k)) return -1;
+  const m0 = markOf(s);
+  S.life -= price(s, k); S.L[s][k]++;
+  if (W) burst(...sysPos(s, last), [C.pink, C.line], 6, 30); // no layout yet (startup self-check): no effects
+  refit(s, m0);
+  return k;
+}
+$('pauto').addEventListener('click', () => { if (sel >= 0) { S.auto[sel] = !S.auto[sel]; play('ui'); updateUI(); } });
 function rowClick(k) {
   const s = sel, sy = SYS[s], [x, y] = sysPos(s, last);
   if (!S.on[s]) {
@@ -1223,10 +1246,7 @@ function rowClick(k) {
     if (!n || S.life < c) return play('deny');
     S.life -= c; L[k] += n; play('buy');
     burst(x, y, [C.pink, C.line], 14 + 2 * n, 40);
-    if (markOf(s) > m0) {
-      toast(`${sy.name} refit: Mark ${MARK[markOf(s)]}.`); play('talent'); buzz([20, 40, 20]); burst(x, y, [C.sun, C.line], 30, 50);
-      if (markOf(s) === 3) quip(QUIPS.mark4, true); else if (!S.ach.includes('mk2')) quip(QUIPS.mark2, true); // first refit ever
-    }
+    refit(s, m0);
   }
   fire(s, true);
   updateUI();
@@ -1460,6 +1480,7 @@ function warp(boon = '') {
   guide([ // arrival briefing
     { text: `Welcome to ${world().name}, Engineer. You earned a Star Seed: spend it in Talents, bottom right.` },
     fresh.length && { text: `New hardware online: ${fresh.join(', ')}. Same job as before: bring this world to life.` },
+    S.world === 1 && { text: 'New clearance: every system panel now has an AUTO switch. Turn it on and that crew buys its own upgrades.' },
     trait().text && { text: `Survey says: ${trait().text}. Plan your upgrades around it.` },
     boon && { text: `${BOONS.find(b => b.id === boon).name} is in effect: ${BOONS.find(b => b.id === boon).desc}` },
     { text: world().fact },
@@ -1648,11 +1669,21 @@ function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
-      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n, daily: S.daily, boon: S.boon, offer: S.offer, contract: S.contract },
+      S: saveFields(),
       items: items.slice(-150).map(it => [Math.round(it.u), Math.round(it.v)]),
     }));
   } catch { /* private mode or full storage: keep playing unsaved */ }
 }
+// What is saved, and how a (validated) save becomes state again. Older saves lack later fields: each gets its default.
+const saveFields = () => ({ life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal,
+  intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n, daily: S.daily, boon: S.boon, offer: S.offer, contract: S.contract, auto: S.auto });
+const fromSave = (v, played) => ({ life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world, on: v.on, L: v.L,
+  start: performance.now() / 1000 - (Number.isFinite(played) ? played : 0), // the current clock, not the stale frame time from before a hidden tab
+  seeds: v.seeds ?? v.world, // saves from before talents: one seed per planet already healed
+  tal: [...new Set(v.tal || [])], intro: v.intro ?? true, // saves from before the intro skip it
+  done: v.done ?? false, best: v.best ?? {}, ach: [...new Set(v.ach || [])], daily: v.daily ?? '',
+  n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0, ...(v.n || {}) },
+  boon: v.boon ?? '', offer: v.offer ?? [], contract: v.contract ?? null, auto: v.auto ?? SYS.map(() => false) });
 // The save is outside data (could be stale or hand-edited): check every field before trusting it.
 const optional = (v, ok) => v === undefined || ok(v); // fields that older saves lack
 const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
@@ -1670,6 +1701,7 @@ const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
   && optional(d.S.daily, v => v === '' || typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v))
   && optional(d.S.boon, v => v === '' || BOONS.some(b => b.id === v))
   && optional(d.S.offer, v => Array.isArray(v) && v.length <= 3 && v.every(id => BOONS.some(b => b.id === id)))
+  && optional(d.S.auto, v => Array.isArray(v) && v.length === SYS.length && v.every(x => typeof x === 'boolean'))
   && optional(d.S.contract, c => c === null || !!c && typeof c === 'object' && Object.hasOwn(CONTRACT_KINDS, c.kind)
     && ['arg', 't', 'secs', 'reward'].every(k => Number.isFinite(c[k])) && c.arg >= 0 && c.reward >= 0
     && (c.kind !== 'unlock' || Number.isInteger(c.arg) && c.arg > 0 && c.arg < SYS.length) && (c.kind !== 'earn' || Number.isFinite(c.from)));
@@ -1684,10 +1716,7 @@ function load() {
     return false;
   }
   const v = d.S, prev = S.world;
-  Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world,
-    on: v.on, L: v.L, start: performance.now() / 1000 - (Number.isFinite(d.played) ? d.played : 0), // now, not the stale frame time from before a hidden tab done: v.done ?? false, best: v.best ?? {}, boon: v.boon ?? '', offer: v.offer ?? [], contract: v.contract ?? null,
-    ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0, ...(v.n || {}) }, daily: v.daily ?? '',
-    seeds: v.seeds ?? v.world, tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
+  Object.assign(S, fromSave(v, d.played));
   const was = SYS.map(sy => sy.id).join();
   setLoadout(S.world);
   if (W && SYS.map(sy => sy.id).join() !== was) resize(); // another tab warped meanwhile
@@ -1951,7 +1980,7 @@ function stepCine(t, dt) {
 }
 
 // ---------- loop ----------
-let uiTick = 0, resume = true, panelH = 0, autoT = 0, paidAt = 0; // resume: skip one income gap after a hidden tab (away() already paid it)
+let buyT = 0, uiTick = 0, resume = true, panelH = 0, autoT = 0, paidAt = 0; // resume: skip one income gap after a hidden tab (away() already paid it)
 let errors = 0;
 function frame(ms) { // one bad frame must not stop the game: log it and keep going
   try { step(ms); } catch (e) { if (errors++ < 5) console.error(e); }
@@ -1973,6 +2002,7 @@ function step(ms) {
   if (heal >= 1 && !S.done) showWarp();
   const aps = has('autotap2') ? 4 : has('autotap') ? 1 : 0; // Tap Bot / Tap Swarm: automatic taps per second
   if (aps && (autoT += dt * aps) >= 1) { autoT -= 1; tapSomewhere(true); }
+  if ((buyT += dt) >= .5) { buyT = 0; SYS.forEach((_, s) => autoBuy(s)); } // auto-buy: twice a second
   if (combo && t - comboAt > COMBO_GAP) combo = 0;
 
   const reached = STAGES.filter(s => heal >= s.at).length;
@@ -2020,6 +2050,12 @@ function step(ms) {
     console.assert(/^\d{4}-\d{2}-\d{2}$/.test(today()), 'daily date format');
     Object.assign(S, { intro: true, daily: today() }); crateWait = 0; stepCrate(1); console.assert(!crate, 'one supply drop per day');
     console.assert(CONTRACT_KINDS.unlock.pick()?.arg === 1, 'contract: unlock the next system');
+    Object.assign(S, { world: 1, auto: [true, false, false, false, false, false], L: SYS.map(() => [0, 0, 0]) }); S.life = price(0, 0);
+    console.assert(autoBuy(0) === 0 && S.L[0][0] === 1 && autoBuy(0) === -1, 'auto-buy: cheapest affordable, then waits'); S.world = 0;
+    const sample = { ...saveFields(), seeds: 3, tal: ['spark'], intro: false, done: true, best: { CRIMSON: 99 }, ach: ['light'], daily: '2026-01-01', boon: 'hands',
+      offer: ['head'], contract: { kind: 'combo', arg: 15, secs: 60, t: 9, reward: 1 }, auto: [true, false, false, false, false, false], n: { ...S.n, crit: 7 } };
+    const back = fromSave(JSON.parse(JSON.stringify(sample)), 0), lost = Object.keys(sample).filter(k => JSON.stringify(back[k]) !== JSON.stringify(sample[k]));
+    console.assert(!lost.length, 'save round trip loses: ' + lost.join(', '));
     const job = { kind: 'earn', arg: 500, from: 0, secs: 90, t: 40, reward: 300 }, sv = c => validSave({ t: 1, S: { ...JSON.parse(keep), contract: c } });
     console.assert(sv(job) && sv(null) && !sv({ ...job, kind: 'cheat' }) && !sv({ ...job, kind: 'unlock', arg: 9 }), 'contract: save validation');
     S.on = SYS.map(() => true); console.assert(CONTRACT_KINDS.unlock.pick() === null, 'contract: nothing left to unlock');
