@@ -7,7 +7,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 #c { position: fixed; left: 0; top: 0; image-rendering: pixelated; touch-action: manipulation; }
 #c:focus { outline: none; }
 #c:focus-visible { outline: 2px solid var(--pink); outline-offset: -4px; }
-button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; }
+button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; } /* no browser padding: it pushed icons and fills off-centre */
 button:disabled { cursor: default; }
 button:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 .ico { height: .8em; image-rendering: pixelated; vertical-align: -1px; margin-right: 4px; }
@@ -129,8 +129,8 @@ html.embed #ttile { right: auto; left: calc(12px + env(safe-area-inset-left)); }
 
 /* settings: gear in the life box, a sheet of toggles, the save code and new game */
 /* settings gear: the screen's top-right corner, matching the goal bar (outside the flow, so the layout never re-fits for it) */
-#gear { pointer-events: auto; position: absolute; top: calc(14px + env(safe-area-inset-top)); right: calc(16px + env(safe-area-inset-right)); width: 52px; height: 52px; padding: 0; display: grid; place-items: center; border: 2px solid var(--soft); background: var(--bg); }
-#gear img { display: block; width: 27px; image-rendering: pixelated; } /* 9px icon at 3x; the button has no default padding, so it centres */
+#gear { pointer-events: auto; position: absolute; top: calc(14px + env(safe-area-inset-top)); right: calc(16px + env(safe-area-inset-right)); width: 52px; height: 52px; display: grid; place-items: center; border: 2px solid var(--soft); background: var(--bg); }
+#gear img { display: block; width: 27px; image-rendering: pixelated; } /* 9px icon at 3x */
 @media (max-width: 551px) { #top { padding-right: calc(76px + env(safe-area-inset-right)); } } /* a centred 400px goal no longer clears the gear: shift it left */
 #settings { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: #1f2333cc; overflow-y: auto; }
 #settings[hidden] { display: none; }
