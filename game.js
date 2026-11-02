@@ -1166,7 +1166,7 @@ function rowClick(k) {
   const s = sel, sy = SYS[s], [x, y] = sysPos(s, last);
   if (!S.on[s]) {
     if (!unlocked(s) || S.life < unlockCost(s)) return play('deny');
-    S.life -= unlockCost(s); S.on[s] = true; play('unlock');
+    S.life -= unlockCost(s); S.on[s] = true; play('unlock'); buzz(15);
     toast(sy.fact);
     burst(x, y, [C.line, C.pink, C.soft], 40, 60);
   } else {
@@ -1175,7 +1175,7 @@ function rowClick(k) {
     S.life -= c; L[k] += n; play('buy');
     burst(x, y, [C.pink, C.line], 14 + 2 * n, 40);
     if (markOf(s) > m0) {
-      toast(`${sy.name} refit: Mark ${MARK[markOf(s)]}.`); play('talent'); burst(x, y, [C.sun, C.line], 30, 50);
+      toast(`${sy.name} refit: Mark ${MARK[markOf(s)]}.`); play('talent'); buzz([20, 40, 20]); burst(x, y, [C.sun, C.line], 30, 50);
       if (markOf(s) === 3) quip(QUIPS.mark4, true); else if (!S.ach.includes('mk2')) quip(QUIPS.mark2, true); // first refit ever
     }
   }
@@ -1693,7 +1693,7 @@ function tapPlanet(x, y, auto = false) {
   if (storm) S.n.storm++;
   if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.pink, end: true }); }
   burst(x, y, crit ? [C.sun, C.line, C.pink] : [C.line, C.pink], crit ? 24 : 10);
-  play(crit ? 'crit' : 'tap');
+  play(crit ? 'crit' : 'tap'); if (crit && !auto) buzz(25); // auto taps would buzz nonstop
   floats.push({ x, y: y - 8, text: '+' + fmt(g), life: 1, col: crit ? C.sun : C.line });
 }
 
@@ -1713,7 +1713,7 @@ function startEvent(id = Object.keys(EVENTS)[Math.random() * 3 | 0]) {
 function endEvent() { ev = null; comet = null; evNext = 120 + Math.random() * 120; }
 function catchComet() {
   const g = Math.max(100, rateOf() * 60);
-  S.life += g; S.earned += g; S.n.comet++;
+  S.life += g; S.earned += g; S.n.comet++; buzz([30, 30, 60]);
   burst(comet.x, comet.y, [C.sun, C.line, C.pink], 40, 70); play('crit'); shake = .6;
   floats.push({ x: comet.x, y: comet.y - 10, text: '+' + fmt(g), life: 1.6, col: C.sun });
   endEvent();
