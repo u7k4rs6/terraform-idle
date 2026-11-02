@@ -123,7 +123,6 @@ html.embed #ttile { right: auto; left: calc(12px + env(safe-area-inset-left)); }
 #warp .box { width: min(360px, 100%); padding: 20px; text-align: center; border: 2px solid var(--pink); }
 #warp h2 { font-weight: normal; font-size: 1.5rem; }
 #warp p { margin: 10px 0 16px; color: var(--soft); }
-#warpbtn { padding: 10px 16px; background: var(--pink); color: var(--deep); }
 
 
 /* settings: gear in the life box, a sheet of toggles, the save code and new game */
@@ -160,3 +159,10 @@ html.calm #guide.talk #gface { animation: none; } /* reduced motion: the command
 #guide.quip #gbubble { width: min(340px, calc(100vw - 40px)); }
 #guide.quip #gbubble::before { display: none; } /* no portrait to point at */
 #wtime { display: block; color: var(--soft); font-size: .8rem; font-variant-numeric: tabular-nums; }
+#boonh { font-weight: normal; font-size: 1rem; color: var(--pink); margin-bottom: 8px; }
+#boons { display: grid; gap: 8px; }
+.boon { padding: 8px 12px; text-align: left; border: 2px solid var(--pink); background: var(--bg); }
+.boon b { display: block; font-weight: normal; color: var(--pink); }
+.boon small { display: block; font-size: .85rem; color: var(--soft); }
+.boon:hover, .boon:focus-visible { background: #4a3043; }
+#warp .box { max-height: calc(100vh - 32px); overflow-y: auto; }

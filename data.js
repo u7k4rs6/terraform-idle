@@ -125,6 +125,16 @@ const STAGES = [
   { at: .5, name: 'clouds', text: 'CLOUD LAYER FORMED. Earth bounces about 30% of incoming sunlight back to space, much of it off clouds.' },
   { at: .75, name: 'rings', text: 'RINGS FORMED. Saturn’s rings are billions of ice chunks, some as big as houses.' },
 ];
+// Warp boons: the warp screen offers three of these; the one you pick lasts for the next world only.
+const BOONS = [
+  { id: 'head', name: 'Head Start', desc: 'Arrive with the first two systems already online.' },
+  { id: 'hands', name: 'Hot Hands', desc: 'Taps pay x3 on this world.' },
+  { id: 'short', name: 'Shortcut', desc: 'This world needs 25% less life to heal.' },
+  { id: 'storm', name: 'Storm Season', desc: 'Meteor showers, flares and comets come three times as often.' },
+  { id: 'bulk', name: 'Bulk Deal', desc: 'Upgrades cost 20% less on this world.' },
+  { id: 'crew', name: 'Veteran Crew', desc: 'Every system comes online with 5 crew already aboard.' },
+  { id: 'summer', name: 'Long Summer', desc: 'All systems produce x1.5 on this world.' },
+];
 // Tapping the moon (an easter egg) reads one of these, in turn.
 const MOON_FACTS = [
   'Our Moon drifts about 3.8 cm farther from Earth every year.',

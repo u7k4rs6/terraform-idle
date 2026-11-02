@@ -7,7 +7,7 @@ const ucost = (s, k, l) => Math.ceil(SYS[s].unlock * UPM[k][0] * UPM[k][1] ** l)
 const sysRate = (s, L) => SYS[s].base * (1 + L[0]) * (1 + .25 * L[1]) * 1.08 ** L[2];
 const tapOf = rate => Math.max(4, Math.round(rate * .15));
 // Log scale so the planet heals steadily while income grows exponentially; /1000 keeps the first taps from jumping to 25%.
-const goalOf = () => GOAL * GOAL_GROWTH ** S.world;
+const goalOf = () => GOAL * GOAL_GROWTH ** S.world * (S.boon === 'short' ? .75 : 1);
 const healOf = earned => Math.min(1, Math.log10(1 + earned / 1000) / Math.log10(1 + goalOf() / 1000));
 console.assert(ucost(0, 0, 0) === 25 && ucost(0, 0, 1) === 30 && ucost(0, 2, 0) === 250, 'upgrade cost');
 console.assert(sysRate(0, [0, 0, 0]) === 3 && sysRate(0, [1, 4, 0]) === 12, 'system rate');
@@ -30,18 +30,18 @@ const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 
 // seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done;
 // done: this world is at 100% (the warp is waiting); best: fastest time to heal each world, by name
 // ach: achievement ids earned; n: lifetime counters the achievements watch (crits, comets caught, taps in meteor showers, longest time away in s)
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0 }, daily: '' }; // daily: local date of the last supply drop opened
+const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0 }, daily: '', boon: '' }; // boon: the warp boon active on this world // daily: local date of the last supply drop opened
 console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
 const has = id => S.tal.includes(id);
 const boost = () => (has('echo') ? 2.5 : 2) ** S.world; // every world you finish multiplies all output for good
 // Talent multipliers: on everything, and on pairs of systems.
 const allMul = () => (has('roots') ? 1.25 : 1) * (has('bloom') ? 1.5 : 1) * (has('gaia') ? 2 : 1) * (has('kinetic') ? 1 + Math.min(1, S.taps / 1e4) : 1);
 const PAIR = { lens: [0, 1], swarm: [2, 3], grow: [4, 5] };
-const sysOut = s => sysRate(s, S.L[s]) * boost() * allMul() * ((SLOT[s].ground ? trait().ground : trait().orbit) || 1) * (ev?.id === 'flare' ? 2 : 1)
+const sysOut = s => sysRate(s, S.L[s]) * boost() * allMul() * ((SLOT[s].ground ? trait().ground : trait().orbit) || 1) * (ev?.id === 'flare' ? 2 : 1) * (S.boon === 'summer' ? 1.5 : 1)
   * Object.entries(PAIR).reduce((m, [id, ss]) => (has(id) && ss.includes(s) ? m * 2 : m), 1);
 const rateOf = () => SYS.reduce((a, _, s) => a + (S.on[s] ? sysOut(s) : 0), 0);
-const tapGain = () => (tapOf(rateOf()) * (has('spark') ? 3 : 1) + (has('tapecho') ? rateOf() : 0)) * (trait().tap || 1); // one tap, before a crit
-const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (has('thrift') ? .9 : 1)); // level l -> l+1 of upgrade k
+const tapGain = () => (tapOf(rateOf()) * (has('spark') ? 3 : 1) + (has('tapecho') ? rateOf() : 0)) * (trait().tap || 1) * (S.boon === 'hands' ? 3 : 1); // one tap, before a crit
+const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (has('thrift') ? .9 : 1) * (S.boon === 'bulk' ? .8 : 1)); // level l -> l+1 of upgrade k
 const unlockCost = s => Math.ceil(SYS[s].unlock * (has('cheap') ? .75 : 1));
 const rewardOf = g => g.reward * (has('patron') ? 3 : 1) * (trait().reward || 1);
 const unlocked = s => s === 0 || S.on[s - 1];
@@ -1113,7 +1113,8 @@ function updateUI() {
   $('rate').textContent = `${fmt(rateOf())} life/s` + (S.world ? ` x${fmt(boost())}` : '');
   const cycle = Math.floor(S.world / WORLDS.length);
   $('wname').textContent = world().name + (cycle ? ' ' + roman(cycle + 1) : '');
-  $('wtrait').textContent = trait().text || '';
+  const boonName = BOONS.find(b => b.id === S.boon)?.name;
+  $('wtrait').textContent = [trait().text, boonName && `Boon: ${boonName}`].filter(Boolean).join(' · ');
   const best = S.best[world().name], clock = n => `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}`;
   $('wtime').textContent = S.done ? `healed · best ${clock(best)}` : clock(Math.max(0, last - S.start)) + (best !== undefined ? ` · best ${clock(best)}` : ''); // frozen once healed
   const h = pct(), ns = STAGES.find(st => healOf(S.earned) < st.at); // next milestone
@@ -1175,6 +1176,7 @@ function rowClick(k) {
   if (!S.on[s]) {
     if (!unlocked(s) || S.life < unlockCost(s)) return play('deny');
     S.life -= unlockCost(s); S.on[s] = true; play('unlock'); buzz(15);
+    if (S.boon === 'crew') S.L[s][0] = Math.max(S.L[s][0], 5); // Veteran Crew
     toast(sy.fact);
     burst(x, y, [C.line, C.pink, C.soft], 40, 60);
   } else {
@@ -1378,11 +1380,21 @@ function openWarp() {
   $('warptxt').textContent = end // every world in the cycle is alive: the planet log, then the next cycle
     ? `All ${WORLDS.length} worlds are alive. Best times: ${WORLDS.map(w => `${w.name} ${mmss(S.best[w.name] ?? 0)}`).join(', ')}. ${S.taps} taps and ${S.ach.length}/${ACH.length} achievements in all. Cycle ${roman(n / WORLDS.length + 1)} starts back at ${next}, with all output x${mult} forever.`
     : `${world().name} is alive. Took ${mmss(S.best[world().name])}. Next stop: ${next}, with all output x${mult} forever. You also earn a Star Seed to spend on Talents.`;
-  $('warpbtn').textContent = end ? `Begin cycle ${roman(n / WORLDS.length + 1)} >>` : 'Warp to next world >>';
+  $('boonh').textContent = end ? `Pick a boon for cycle ${roman(n / WORLDS.length + 1)} and warp` : 'Pick a boon for the next world and warp';
+  if (offerFor !== S.world) { // three different boons, kept while this world waits (Stay, reopen, same choice)
+    offer = BOONS.map(b => b.id).sort(() => Math.random() - .5).slice(0, 3); offerFor = S.world;
+  }
+  $('boons').replaceChildren(...offer.map(id => {
+    const b = BOONS.find(x => x.id === id), el = document.createElement('button');
+    el.className = 'boon'; el.innerHTML = `<b>${b.name}</b><small>${b.desc}</small>`;
+    el.addEventListener('click', () => { warp(id); save(); });
+    return el;
+  }));
   closePanel(); closeTalents(); closeSettings();
   $('warp').hidden = false; shield(true);
-  $('warpbtn').focus();
+  $('boons').firstChild.focus();
 }
+let offer = [], offerFor = -1;
 $('warpshare').addEventListener('click', async () => { // brag: the system share sheet, or the clipboard
   const text = `I brought ${world().name} back to life in ${mmss(S.best[world().name] ?? 0)} in TERRAFORM, a pixel idle game.`, url = 'https://utkarshbahuguna.me/terraform-idle/';
   try { if (navigator.share) await navigator.share({ title: 'Terraform', text, url }); else { await navigator.clipboard.writeText(`${text} ${url}`); flashBtn($('warpshare'), 'Copied'); } } catch { /* dismissed */ }
@@ -1394,10 +1406,12 @@ $('warpstay').addEventListener('click', () => { // admire the living planet; the
 });
 
 // Start a fresh dead world: everything resets except the permanent warp boost.
-function warp() {
+function warp(boon = '') {
   $('warp').hidden = true; shield(false); play('warp');
   tiles[0].focus({ preventScroll: true });
-  Object.assign(S, { world: Math.min(S.world + 1, MAX_WORLD), life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: S.seeds + 1 });
+  Object.assign(S, { world: Math.min(S.world + 1, MAX_WORLD), life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: S.seeds + 1, boon });
+  if (boon === 'head') S.on[0] = S.on[1] = true;
+  if (boon === 'storm') evNext = Math.min(evNext, 40);
   if (has('seedbank')) S.life = 1000 * boost();
   const before = SYS.map(sy => sy.id);
   setLoadout(S.world); resize(); // ground systems change size: re-fit the colony around them
@@ -1409,10 +1423,10 @@ function warp() {
     { text: `Welcome to ${world().name}, Engineer. You earned a Star Seed: spend it in Talents, bottom right.` },
     fresh.length && { text: `New hardware online: ${fresh.join(', ')}. Same job as before: bring this world to life.` },
     trait().text && { text: `Survey says: ${trait().text}. Plan your upgrades around it.` },
+    boon && { text: `${BOONS.find(b => b.id === boon).name} is in effect: ${BOONS.find(b => b.id === boon).desc}` },
     { text: world().fact },
   ].filter(Boolean));
 }
-$('warpbtn').addEventListener('click', () => { warp(); save(); });
 
 // ---------- Commander Vos: the story intro and arrival briefings, in a speech bubble at the bottom left ----------
 // Commander Vos: a detailed 3/4 bust in our palette, designed on a 72-unit grid and drawn at 1.75x (132px) so seams, vents and
@@ -1595,7 +1609,7 @@ function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
-      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n, daily: S.daily },
+      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n, daily: S.daily, boon: S.boon },
       items: items.slice(-150).map(it => [Math.round(it.u), Math.round(it.v)]),
     }));
   } catch { /* private mode or full storage: keep playing unsaved */ }
@@ -1614,7 +1628,8 @@ const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
   && optional(d.S.best, v => !!v && typeof v === 'object' && Object.entries(v).every(([k, s]) => WORLDS.some(w => w.name === k) && Number.isInteger(s) && s >= 0))
   && optional(d.S.ach, v => Array.isArray(v) && v.every(id => ACH.some(a => a.id === id)))
   && optional(d.S.n, v => !!v && typeof v === 'object' && Object.values(v).every(x => Number.isFinite(x) && x >= 0))
-  && optional(d.S.daily, v => v === '' || typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v));
+  && optional(d.S.daily, v => v === '' || typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v))
+  && optional(d.S.boon, v => v === '' || BOONS.some(b => b.id === v));
 console.assert(!validSave({ t: 1, S: { life: 0, earned: 0, taps: 0, goal: 0, world: 0, on: [false, true, false, false, false, false], L: SYS.map(() => [0, 0, 0]) } }), 'save: out-of-order unlock');
 console.assert(validSave({ t: 1, S: { life: 5, earned: 5, taps: 1, goal: 0, world: 0, on: [true, false, false, false, false, false], L: [[1, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]] } }), 'save: minimal old save');
 // Restores the save and credits the time since it was written. Returns false if there was nothing usable.
@@ -1627,7 +1642,7 @@ function load() {
   }
   const v = d.S, prev = S.world;
   Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world,
-    on: v.on, L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0), done: v.done ?? false, best: v.best ?? {},
+    on: v.on, L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0), done: v.done ?? false, best: v.best ?? {}, boon: v.boon ?? '',
     ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, ...(v.n || {}) }, daily: v.daily ?? '',
     seeds: v.seeds ?? v.world, tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
   const was = SYS.map(sy => sy.id).join();
@@ -1725,7 +1740,7 @@ function startEvent(id = Object.keys(EVENTS)[Math.random() * 3 | 0]) {
   if (id === 'comet') comet = { x: -16, y: TOP + 20 + Math.random() * Math.max(10, CY - R - TOP - 50), vx: (W + 32) / ev.dur }; // crosses the open sky above the planet
   toast(`${ev.name}! ${ev.text}`, true); play('milestone'); shake = .5; quip(QUIPS[id], true);
 }
-function endEvent() { ev = null; comet = null; evNext = 120 + Math.random() * 120; }
+function endEvent() { ev = null; comet = null; evNext = (120 + Math.random() * 120) / (S.boon === 'storm' ? 3 : 1); } // Storm Season: 3x as often
 function catchComet() {
   const g = Math.max(100, rateOf() * 60);
   S.life += g; S.earned += g; S.n.comet++; buzz([30, 30, 60]);
