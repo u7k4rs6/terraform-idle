@@ -32,6 +32,8 @@ button:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 #heal { height: 10px; margin: 6px 0 2px; background: var(--bg); }
 #healbar { height: 100%; width: 0; background: var(--pink); }
 #healtxt { color: var(--soft); font-size: 18px; }
+#wtrait { display: block; color: var(--soft); font-size: 16px; } /* the world's trait, under its name */
+#wtrait:empty { display: none; }
 #sound { display: flex; gap: 8px; pointer-events: auto; padding-left: 8px; }
 #sound button { width: 40px; height: 40px; display: grid; place-items: center; background: var(--deep); border: 2px solid var(--dim); }
 #sound button[aria-pressed="false"] img { opacity: .3; }
@@ -53,6 +55,7 @@ button:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 #pname { font-weight: normal; font-size: 24px; }
 #pinfo { flex: 1; text-align: right; color: var(--soft); }
 #pclose { width: 36px; height: 36px; background: var(--soft); color: var(--deep); }
+#pmul { min-width: 48px; height: 36px; padding: 0 8px; border: 2px solid var(--soft); color: var(--soft); } /* x1 / x10 / MAX levels per purchase */
 .row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
 .row + .row { border-top: 2px solid var(--bg); }
 .rt { flex: 1; }
@@ -117,3 +120,4 @@ button:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 #warp h2 { font-weight: normal; font-size: 30px; }
 #warp p { margin: 10px 0 16px; color: var(--soft); }
 #warpbtn { padding: 10px 16px; background: var(--pink); color: var(--deep); }
+#warpstay { display: block; margin: 12px auto 0; padding: 4px 10px; border: 2px solid var(--dim); color: var(--soft); }

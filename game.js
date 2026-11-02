@@ -7,34 +7,53 @@ const ucost = (s, k, l) => Math.ceil(SYS[s].unlock * UPM[k][0] * UPM[k][1] ** l)
 const sysRate = (s, L) => SYS[s].base * (1 + L[0]) * (1 + .25 * L[1]) * 1.08 ** L[2];
 const tapOf = rate => Math.max(4, Math.round(rate * .15));
 // Log scale so the planet heals steadily while income grows exponentially; /1000 keeps the first taps from jumping to 25%.
-const healOf = earned => Math.min(1, Math.log10(1 + earned / 1000) / Math.log10(1 + GOAL / 1000));
+const goalOf = () => GOAL * GOAL_GROWTH ** S.world;
+const healOf = earned => Math.min(1, Math.log10(1 + earned / 1000) / Math.log10(1 + goalOf() / 1000));
 console.assert(ucost(0, 0, 0) === 25 && ucost(0, 0, 1) === 30 && ucost(0, 2, 0) === 250, 'upgrade cost');
 console.assert(sysRate(0, [0, 0, 0]) === 3 && sysRate(0, [1, 4, 0]) === 12, 'system rate');
-console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
 
 const fmt = n => {
   if (n < 1000) return n < 10 ? String(Math.floor(n * 10) / 10) : String(Math.floor(n));
   let k = -1;
-  while (n >= 999.5 && k < 3) { n /= 1000; k++; } // 999.5 not 1000: values that round up move to the next unit
-  return n.toFixed(n < 9.995 ? 2 : n < 99.95 ? 1 : 0) + 'kmbt'[k];
+  while (n >= 999.5 && k < 4) { n /= 1000; k++; } // 999.5 not 1000: values that round up move to the next unit
+  return n.toFixed(n < 9.995 ? 2 : n < 99.95 ? 1 : 0) + 'kmbtq'[k];
 };
-console.assert(fmt(999999) === '1.00m' && fmt(9999) === '10.0k' && fmt(1500) === '1.50k' && fmt(12.7) === '12', 'fmt rounding');
+console.assert(fmt(999999) === '1.00m' && fmt(9999) === '10.0k' && fmt(1500) === '1.50k' && fmt(12.7) === '12' && fmt(2e15) === '2.00q', 'fmt rounding');
+const mmss = s => `${Math.floor(s / 60)}m ${s % 60}s`;
+const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][n] ?? n;
 
-// seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false };
+// seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done;
+// done: this world is at 100% (the warp is waiting); best: fastest time to heal each world, by name
+const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {} };
+console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
 const has = id => S.tal.includes(id);
 const boost = () => (has('echo') ? 2.5 : 2) ** S.world; // every world you finish multiplies all output for good
 // Talent multipliers: on everything, and on pairs of systems.
 const allMul = () => (has('roots') ? 1.25 : 1) * (has('bloom') ? 1.5 : 1) * (has('gaia') ? 2 : 1) * (has('kinetic') ? 1 + Math.min(1, S.taps / 1e4) : 1);
 const PAIR = { lens: [0, 1], swarm: [2, 3], grow: [4, 5] };
-const sysOut = s => sysRate(s, S.L[s]) * boost() * allMul() * Object.entries(PAIR).reduce((m, [id, ss]) => (has(id) && ss.includes(s) ? m * 2 : m), 1);
+const sysOut = s => sysRate(s, S.L[s]) * boost() * allMul() * ((SLOT[s].ground ? trait().ground : trait().orbit) || 1)
+  * Object.entries(PAIR).reduce((m, [id, ss]) => (has(id) && ss.includes(s) ? m * 2 : m), 1);
 const rateOf = () => SYS.reduce((a, _, s) => a + (S.on[s] ? sysOut(s) : 0), 0);
-const price = (s, k) => Math.ceil(ucost(s, k, S.L[s][k]) * (has('thrift') ? .9 : 1)); // next level of upgrade k
+const tapGain = () => (tapOf(rateOf()) * (has('spark') ? 3 : 1) + (has('tapecho') ? rateOf() : 0)) * (trait().tap || 1); // one tap, before a crit
+const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (has('thrift') ? .9 : 1)); // level l -> l+1 of upgrade k
 const unlockCost = s => Math.ceil(SYS[s].unlock * (has('cheap') ? .75 : 1));
-const rewardOf = g => g.reward * (has('patron') ? 3 : 1);
+const rewardOf = g => g.reward * (has('patron') ? 3 : 1) * (trait().reward || 1);
 const unlocked = s => s === 0 || S.on[s - 1];
 const items = []; // life patches on the planet: { u, v (texture coords), born }
 const pct = () => Math.floor(healOf(S.earned) * 100);
+// Bulk buying: how many levels of upgrade k the current mode buys and what they cost together.
+// bulk = 1 or 10 levels (all or nothing), 0 = as many as you can afford right now (at least one).
+let bulk = 1;
+function bulkOf(s, k) {
+  const L = S.L[s][k], want = bulk || MAXL - L;
+  let n = 0, c = 0;
+  while (n < want && L + n < MAXL) {
+    const p = price(s, k, L + n);
+    if (!bulk && n && c + p > S.life) break;
+    c += p; n++;
+  }
+  return [n, c];
+}
 
 // ---------- pixel drawing (every shape lands on whole pixels, so nothing is anti-aliased) ----------
 const mk = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
@@ -521,7 +540,7 @@ const stars = [];
 for (let y = 3; y < 1000; y += 9) for (let x = 3; x < 2000; x += 9) if ((x * 7 + y * 13) % 5 < 2) stars.push([x + (x * y) % 4, y + (x + y) % 3, (x * 31 + y) % 7]);
 const parts = [], floats = [], shots = [], beams = [], pulses = [];
 const bots = Array.from({ length: 40 }, (_, k) => [(k * 97.3) % TW, 18 + (k * 53.7) % (TH - 36)]); // crew walking the surface
-let off = 0, shake = 0, pulse = 0, flash = 0, last = 0, zoom = 1, stage = 0, sel = -1;
+let off = 0, shake = 0, flash = 0, last = 0, zoom = 1, stage = 0, sel = -1;
 const cam = { z: 1, fx: 0, fy: 0, ax: 0, ay: 0 }; // eased camera: focus point (scene px), zoom, screen anchor
 const camOrigin = () => [Math.round(cam.ax - cam.fx * cam.z), Math.round(cam.ay - cam.fy * cam.z)];
 
@@ -928,15 +947,21 @@ const rows = [0, 1, 2].map(k => {
 function updateUI() {
   set($('life'), ICON + fmt(S.life));
   $('rate').textContent = `${fmt(rateOf())} life/s` + (S.world ? ` x${fmt(boost())}` : '');
-  $('wname').textContent = world().name + (S.world >= WORLDS.length ? ' ' + 'I'.repeat(Math.floor(S.world / WORLDS.length) + 1) : '');
-  const h = pct();
+  const cycle = Math.floor(S.world / WORLDS.length);
+  $('wname').textContent = world().name + (cycle ? ' ' + roman(cycle + 1) : '');
+  $('wtrait').textContent = trait().text || '';
+  const h = pct(), ns = STAGES.find(st => healOf(S.earned) < st.at); // next milestone
   $('healbar').style.width = h + '%';
-  $('healtxt').textContent = `${h}% terraformed`;
+  $('healtxt').textContent = `${h}% terraformed` + (ns ? ` · ${ns.name} at ${ns.at * 100}%` : '');
   $('heal').setAttribute('aria-valuenow', h);
 
   const g = GOALS[S.goal], goal = $('goal');
-  goal.hidden = !g;
-  if (g) {
+  goal.hidden = !g && !S.done;
+  if (S.done) { // the world is alive: the goal bar holds the warp until the player is ready
+    goal.classList.add('ready');
+    set($('gtext'), `${world().name} is alive. Warp to ${WORLDS[(S.world + 1) % WORLDS.length].name}`);
+    set($('grew'), `x${fmt(has('echo') ? 2.5 : 2)}`);
+  } else if (g) {
     const n = Math.min(g.get(), g.need);
     goal.classList.toggle('ready', n >= g.need && g.reward > 0);
     set($('gtext'), `${val(g.text)} ${n}/${g.need}`);
@@ -968,13 +993,13 @@ function updateUI() {
       set(el, `Unlock ${sy.name}<small>${unlocked(s) ? sy.desc : `Unlock the ${SYS[s - 1].name} first.`}</small>`);
       return set(buy, `Unlock<span>${ICON}${fmt(unlockCost(s))}</span>`);
     }
-    const max = L[k] >= MAXL, c = price(s, k), [name, eff] = sy.ups[k];
+    const max = L[k] >= MAXL, [n, c] = bulkOf(s, k), [name, eff] = sy.ups[k];
     const desc = [`Adds +1 ${sy.unit} to the crew.`, `${eff} per level.`, `${eff} per level, stacking.`][k];
-    const cur = [[`${1 + L[0]} ${sy.unit}s`, '+1'], [`+${25 * L[1]}%`, '+25%'], [`x${(1.08 ** L[2]).toFixed(2)}`, 'x1.08']][k];
+    const cur = [[`${1 + L[0]} ${sy.unit}s`, `+${n}`], [`+${25 * L[1]}%`, `+${25 * n}%`], [`x${(1.08 ** L[2]).toFixed(2)}`, `x${(1.08 ** n).toFixed(2)}`]][k];
     r.hidden = false;
     buy.setAttribute('aria-disabled', max || S.life < c);
     set(el, `${name}<span class="lv">Lv.${L[k]}</span><small>${desc}</small><small class="cur">Current: ${cur[0]} ${max ? '' : `<i>${cur[1]}</i>`}</small>`);
-    set(buy, max ? 'MAX' : `Upgrade<span>${ICON}${fmt(c)}</span>`);
+    set(buy, max ? 'MAX' : `Upgrade${n > 1 ? ' x' + n : ''}<span>${ICON}${fmt(c)}</span>`);
   });
 }
 
@@ -982,18 +1007,19 @@ function rowClick(k) {
   const s = sel, sy = SYS[s], [x, y] = sysPos(s, last);
   if (!S.on[s]) {
     if (!unlocked(s) || S.life < unlockCost(s)) return play('deny');
-    S.life -= unlockCost(s); S.on[s] = true; pulse = 1; play('unlock');
+    S.life -= unlockCost(s); S.on[s] = true; play('unlock');
     toast(sy.fact);
     burst(x, y, [C.line, C.pink, C.soft], 40, 60);
   } else {
-    const L = S.L[s], c = price(s, k);
-    if (L[k] >= MAXL || S.life < c) return play('deny');
-    S.life -= c; L[k]++; play('buy');
-    burst(x, y, [C.pink, C.line], 14, 40);
+    const L = S.L[s], [n, c] = bulkOf(s, k);
+    if (!n || S.life < c) return play('deny');
+    S.life -= c; L[k] += n; play('buy');
+    burst(x, y, [C.pink, C.line], 14 + 2 * n, 40);
   }
   fire(s, true);
   updateUI();
 }
+$('pmul').addEventListener('click', () => { bulk = { 1: 10, 10: 0, 0: 1 }[bulk]; $('pmul').textContent = bulk ? 'x' + bulk : 'MAX'; play('ui'); updateUI(); });
 
 let opener = null; // element that opened the panel, to give focus back on close
 function openPanel(s) {
@@ -1012,7 +1038,11 @@ function closePanel() {
 $('pclose').addEventListener('click', closePanel);
 $('prev').addEventListener('click', () => openPanel((sel + SYS.length - 1) % SYS.length));
 $('next').addEventListener('click', () => openPanel((sel + 1) % SYS.length));
-addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('talents').hidden) closeTalents(); else closePanel(); } });
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (!$('talents').hidden) closeTalents(); else closePanel(); }
+  // 1-6 open a system's panel (not while a dialog is up or typing in a field)
+  if (e.key >= '1' && e.key <= '6' && !e.ctrlKey && !e.metaKey && !e.altKey && !$('c').inert && !/TEXTAREA|INPUT/.test(e.target.tagName)) openPanel(+e.key - 1);
+});
 
 // ---------- talents: every healed planet gives a Star Seed; each talent costs one and needs the node above it ----------
 const TI = { // 9x9 talent icons (w = line, n = fill, p = pink)
@@ -1105,7 +1135,14 @@ function renderTal() {
   }
   const t = talById[selTal], buy = $('tbuy');
   $('tname').textContent = t.name;
-  $('tdesc').textContent = val(t.desc);
+  let effect = '';
+  if (!has(t.id)) { // what this talent would do to your numbers right now
+    const r0 = rateOf(), t0 = tapGain();
+    S.tal.push(t.id); const r1 = rateOf(), t1 = tapGain(); S.tal.pop();
+    if (r1 !== r0) effect = ` Now: ${fmt(r0)} -> ${fmt(r1)} life/s.`;
+    else if (t1 !== t0) effect = ` Now: taps +${fmt(t0)} -> +${fmt(t1)}.`;
+  }
+  $('tdesc').textContent = val(t.desc) + effect;
   buy.setAttribute('aria-disabled', !canTal(t) || S.seeds < 1);
   set(buy, has(t.id) ? 'Unlocked' : !canTal(t) ? `Needs<span>${talById[t.req].name}</span>` : `Unlock<span>${SEED}1</span>`);
 }
@@ -1148,6 +1185,7 @@ function toast(msg, big) {
 }
 
 $('goal').addEventListener('click', () => {
+  if (S.done) return openWarp();
   const g = GOALS[S.goal];
   if (!g) return;
   if (g.reward && g.get() >= g.need) { const r = rewardOf(g); S.life += r; S.earned += r; S.goal++; play('coin'); return updateUI(); }
@@ -1155,16 +1193,30 @@ $('goal').addEventListener('click', () => {
   if (s >= 0) openPanel(s); else closePanel();
 });
 
-function showWarp() {
-  S.done = true; play('milestone');
-  const s = Math.round(last - S.start), next = WORLDS[(S.world + 1) % WORLDS.length].name;
-  $('warptxt').textContent = `${world().name} is alive. Took ${Math.floor(s / 60)}m ${s % 60}s. Next stop: ${next}, with all output x${fmt(boost() * (has('echo') ? 2.5 : 2))} forever. You also earn a Star Seed to spend on Talents.`;
+function showWarp() { // the world just hit 100%: log the run, then offer the warp
+  const name = world().name, s = Math.round(last - S.start);
+  S.done = true; S.best[name] = Math.min(S.best[name] ?? Infinity, s);
+  burst(CX, CY, [C.line, C.pink, C.soft], 80, 90);
+  openWarp();
+}
+function openWarp() {
+  play('milestone');
+  const n = S.world + 1, next = WORLDS[n % WORLDS.length].name, mult = fmt(boost() * (has('echo') ? 2.5 : 2)), end = n % WORLDS.length === 0;
+  $('warph').textContent = end ? 'Sector terraformed' : 'Planet terraformed';
+  $('warptxt').textContent = end // every world in the cycle is alive: the planet log, then the next cycle
+    ? `All ${WORLDS.length} worlds are alive. Best times: ${WORLDS.map(w => `${w.name} ${mmss(S.best[w.name] ?? 0)}`).join(', ')}. ${S.taps} taps in all. Cycle ${roman(n / WORLDS.length + 1)} starts back at ${next}, with all output x${mult} forever.`
+    : `${world().name} is alive. Took ${mmss(S.best[world().name])}. Next stop: ${next}, with all output x${mult} forever. You also earn a Star Seed to spend on Talents.`;
+  $('warpbtn').textContent = end ? `Begin cycle ${roman(n / WORLDS.length + 1)} >>` : 'Warp to next world >>';
   closePanel(); closeTalents();
   $('warp').hidden = false;
   for (const id of BEHIND_WARP) $(id).inert = true; // modal: nothing behind the dialog is reachable
   $('warpbtn').focus();
-  burst(CX, CY, [C.line, C.pink, C.soft], 80, 90);
 }
+$('warpstay').addEventListener('click', () => { // admire the living planet; the goal bar keeps the warp ready
+  $('warp').hidden = true; play('ui');
+  for (const id of BEHIND_WARP) $(id).inert = false;
+  $('goal').focus({ preventScroll: true });
+});
 
 // Start a fresh dead world: everything resets except the permanent warp boost.
 const BEHIND_WARP = ['c', 'top', 'side', 'toast', 'bar', 'panel', 'prev', 'next', 'guide'];
@@ -1183,6 +1235,7 @@ function warp() {
   guide([ // arrival briefing
     { text: `Welcome to ${world().name}, Engineer. You earned a Star Seed: spend it in Talents, bottom right.` },
     fresh.length && { text: `New hardware online: ${fresh.join(', ')}. Same job as before: bring this world to life.` },
+    trait().text && { text: `Survey says: ${trait().text}. Plan your upgrades around it.` },
     { text: world().fact },
   ].filter(Boolean));
 }
@@ -1337,19 +1390,25 @@ function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
-      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro },
+      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro, done: S.done, best: S.best },
       items: items.slice(-150).map(it => [Math.round(it.u), Math.round(it.v)]),
     }));
   } catch { /* private mode or full storage: keep playing unsaved */ }
 }
 // The save is outside data (could be stale or hand-edited): check every field before trusting it.
-const validSave = d => d && Number.isFinite(d.t) && d.S
-  && ['life', 'earned', 'taps', 'goal', 'world'].every(k => Number.isFinite(d.S[k]) && d.S[k] >= 0)
-  && Array.isArray(d.S.on) && d.S.on.length === SYS.length
-  && Array.isArray(d.S.L) && d.S.L.length === SYS.length && d.S.L.every(l => Array.isArray(l) && l.length === 3 && l.every(n => Number.isInteger(n) && n >= 0 && n <= MAXL))
-  && (d.S.intro === undefined || typeof d.S.intro === 'boolean')
-  && (d.S.seeds === undefined || Number.isInteger(d.S.seeds) && d.S.seeds >= 0) // older saves have no talents yet
-  && (d.S.tal === undefined || Array.isArray(d.S.tal) && d.S.tal.every(id => TAL.some(t => t.id === id)));
+const optional = (v, ok) => v === undefined || ok(v); // fields that older saves lack
+const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
+  && ['life', 'earned'].every(k => Number.isFinite(d.S[k]) && d.S[k] >= 0 && d.S[k] < 1e300) // room for 24h of income on the last allowed world
+  && ['taps', 'goal', 'world'].every(k => Number.isInteger(d.S[k]) && d.S[k] >= 0)
+  && d.S.goal <= GOALS.length && d.S.world <= 60 // 2.5^world boost: the cap keeps every number finite
+  && Array.isArray(d.S.on) && d.S.on.length === SYS.length && d.S.on.every((on, s) => typeof on === 'boolean' && (!on || s === 0 || d.S.on[s - 1])) // unlocked in order
+  && Array.isArray(d.S.L) && d.S.L.length === SYS.length && d.S.L.every((l, s) => Array.isArray(l) && l.length === 3 && l.every(n => Number.isInteger(n) && n >= 0 && n <= MAXL) && (d.S.on[s] || l.every(n => !n)))
+  && optional(d.S.intro, v => typeof v === 'boolean') && optional(d.S.done, v => typeof v === 'boolean')
+  && optional(d.S.seeds, v => Number.isInteger(v) && v >= 0 && v <= 60)
+  && optional(d.S.tal, v => Array.isArray(v) && v.every(id => TAL.some(t => t.id === id)))
+  && optional(d.S.best, v => !!v && typeof v === 'object' && Object.entries(v).every(([k, s]) => WORLDS.some(w => w.name === k) && Number.isInteger(s) && s >= 0));
+console.assert(!validSave({ t: 1, S: { life: 0, earned: 0, taps: 0, goal: 0, world: 0, on: [false, true, false, false, false, false], L: SYS.map(() => [0, 0, 0]) } }), 'save: out-of-order unlock');
+console.assert(validSave({ t: 1, S: { life: 5, earned: 5, taps: 1, goal: 0, world: 0, on: [true, false, false, false, false, false], L: [[1, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]] } }), 'save: minimal old save');
 // Restores the save and credits the time since it was written. Returns false if there was nothing usable.
 function load() {
   let raw = null, d;
@@ -1359,9 +1418,9 @@ function load() {
     return false;
   }
   const v = d.S;
-  Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: Math.min(v.goal | 0, GOALS.length), world: Math.min(v.world | 0, 60), // 2^world boost: cap keeps numbers finite
-    on: v.on.map(Boolean), L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0),
-    seeds: v.seeds ?? Math.min(v.world | 0, 60), tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
+  Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world,
+    on: v.on, L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0), done: v.done ?? false, best: v.best ?? {},
+    seeds: v.seeds ?? v.world, tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
   const was = SYS.map(sy => sy.id).join();
   setLoadout(S.world);
   if (W && SYS.map(sy => sy.id).join() !== was) resize(); // another tab warped meanwhile
@@ -1395,8 +1454,11 @@ setInterval(() => { if (!document.hidden) save(); }, 5000); // while hidden the 
 cv.addEventListener('pointerdown', e => {
   if (!W || !e.isPrimary || e.button > 0) return; // not laid out yet; right/middle click and extra fingers are not taps
   const [ox, oy] = camOrigin(), x = (e.clientX / PX - ox) / cam.z, y = (e.clientY / PX - oy) / cam.z;
-  let hit = -1, best = HIT / cam.z;
-  SYS.forEach((_, s) => { const [sx, sy] = sysPos(s, last), d = Math.hypot(x - sx, y - sy); if (d <= best) { best = d; hit = s; } }); // nearest wins
+  let hit = -1, best = Infinity; // anywhere on a sprite (plus a finger's margin) counts; the nearest centre wins
+  SYS.forEach((_, s) => {
+    const [sx, sy] = sysPos(s, last), img = look(s).lit, d = Math.hypot(x - sx, y - sy);
+    if (Math.abs(x - sx) <= img.width / 2 + HIT / 2 && Math.abs(y - sy) <= img.height / 2 + HIT / 2 && d < best) { best = d; hit = s; }
+  });
   if (hit >= 0) return openPanel(hit);
   if (y >= GY) return; // the ground is solid
   if ((x - CX) ** 2 + (y - CY) ** 2 > R * R) return closePanel();
@@ -1411,7 +1473,7 @@ cv.addEventListener('keydown', e => {
 const tapSomewhere = () => tapPlanet(CX + (Math.random() - .5) * R, CY - R * (.2 + Math.random() * .5)); // a spot on the visible face
 function tapPlanet(x, y) {
   const crit = Math.random() < (has('crit2') ? .2 : has('crit') ? .1 : 0); // Lucky Strike / Jackpot
-  const g = (tapOf(rateOf()) * (has('spark') ? 3 : 1) + (has('tapecho') ? rateOf() : 0)) * (crit ? 10 : 1);
+  const g = tapGain() * (crit ? 10 : 1);
   S.life += g; S.earned += g; S.taps++;
   if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.pink, end: true }); }
   burst(x, y, crit ? [C.sun, C.line, C.pink] : [C.line, C.pink], crit ? 24 : 10);
@@ -1432,13 +1494,13 @@ function frame(ms) {
   else { const g = rateOf() * gap; S.life += g; S.earned += g; }
   const heal = healOf(S.earned);
   off = (off + dt * 6) % TW;
-  shake = Math.max(0, shake - dt * 3); pulse = Math.max(0, pulse - dt * 1.5); flash = Math.max(0, flash - dt * 1.2);
-  if (heal >= 1 && $('warp').hidden && !S.done) showWarp();
+  shake = Math.max(0, shake - dt * 3); flash = Math.max(0, flash - dt * 1.2);
+  if (heal >= 1 && !S.done) showWarp();
   const aps = has('autotap2') ? 4 : has('autotap') ? 1 : 0; // Tap Bot / Tap Swarm: automatic taps per second
   if (aps && (autoT += dt * aps) >= 1) { autoT -= 1; tapSomewhere(); }
 
   const reached = STAGES.filter(s => heal >= s.at).length;
-  if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); pulse = 1; shake = .8; play('milestone'); }
+  if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); shake = .8; play('milestone'); }
   zoom += (1 - zoom) * Math.min(1, dt * 1.5);
   R = Math.round(R0 * zoom);
 
