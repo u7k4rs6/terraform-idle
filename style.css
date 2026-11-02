@@ -173,3 +173,11 @@ html.calm #guide.talk #gface { animation: none; } /* reduced motion: the command
 #contract span { color: var(--soft); white-space: nowrap; }
 @media (max-width: 899px) { #contract { left: calc(16px + env(safe-area-inset-left)); right: auto; } } /* under the stat boxes */
 @media (max-width: 639px) { #contract { right: 16px; width: auto; } }
+/* sector cinematic: only the canvas, the commander's bubble and Skip */
+html.cine #top, html.cine #side, html.cine #bar, html.cine #contract, html.cine #toast, html.cine #prev, html.cine #next, html.cine #panel { visibility: hidden; }
+html.cine #guide { bottom: 24px !important; }
+html.cine #gface, html.cine #gskip { display: none; }
+#cineskip { position: fixed; right: calc(16px + env(safe-area-inset-right)); top: calc(16px + env(safe-area-inset-top)); padding: 6px 12px; border: 2px solid var(--soft); background: var(--deep); color: var(--soft); }
+#cineskip[hidden] { display: none; }
+html.cine #gbubble::before { display: none; }
+html.cine #gbubble { width: min(420px, calc(100vw - 32px)); }

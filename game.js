@@ -881,7 +881,10 @@ function draw(t, heal) {
   if (!S.taps) blit(T.hand, CX + R * .2, CY - R * .3 + bob);
   else if (!S.on[0] && sel !== 0 && S.life >= unlockCost(0)) { const [x, y] = sysPos(0, t); blit(T.hand, x, y + 18 + bob); }
 
-  // screen: the scene scaled up with nearest-neighbour
+  present(t);
+}
+// Screen: the scene buffer scaled up with nearest-neighbour, then grain and the warp flash.
+function present(t) {
   out.imageSmoothingEnabled = false;
   out.fillStyle = C.bg; out.fillRect(0, 0, cv.width, cv.height);
   const [ox, oy] = camOrigin(), still = calm(), sx = shake && !still ? Math.round((Math.random() - .5) * shake * 6) : 0, sy = shake && !still ? Math.round((Math.random() - .5) * shake * 6) : 0;
@@ -1177,7 +1180,7 @@ function updateUI() {
   const cs = $('contract'); cs.hidden = !contract;
   const left = Math.ceil(contract?.t ?? 0);
   if (contract) set(cs, `<b>CONTRACT ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</b> ${contract.text} <span>${ICON}${fmt(contract.reward)}</span>`);
-  if (innerWidth < 640) $('toast').style.top = (SIDE.b * PX + 10 + (contract ? cs.offsetHeight + 6 : 0)) + 'px'; // phones: toasts step below the contract
+  if (innerWidth < 640 && SIDE) $('toast').style.top = (SIDE.b * PX + 10 + (contract ? cs.offsetHeight + 6 : 0)) + 'px'; // phones: toasts step below the contract
   updateGuide();
   if (W && hudH() !== layoutH) resize(); // goal text wrapped or the HUD changed size: re-fit the scene below it
 
@@ -1246,7 +1249,7 @@ $('pclose').addEventListener('click', closePanel);
 $('prev').addEventListener('click', () => openPanel((sel + SYS.length - 1) % SYS.length));
 $('next').addEventListener('click', () => openPanel((sel + 1) % SYS.length));
 addEventListener('keydown', e => {
-  if (e.key === 'Escape') { if (!$('talents').hidden) closeTalents(); else if (!$('settings').hidden) closeSettings(); else closePanel(); }
+  if (e.key === 'Escape') { if (cine) endCine(); else if (!$('talents').hidden) closeTalents(); else if (!$('settings').hidden) closeSettings(); else closePanel(); }
   // 1-6 open a system's panel (not while a dialog is up or typing in a field)
   if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey && !e.altKey && !$('c').inert && !/TEXTAREA|INPUT/.test(e.target.tagName)) takePhoto();
   if (e.key >= '1' && e.key <= '6' && !e.ctrlKey && !e.metaKey && !e.altKey && !$('c').inert && !/TEXTAREA|INPUT/.test(e.target.tagName)) openPanel(+e.key - 1);
@@ -1422,7 +1425,7 @@ function openWarp() {
   $('boons').replaceChildren(...offer.map(id => {
     const b = BOONS.find(x => x.id === id), el = document.createElement('button');
     el.className = 'boon'; el.innerHTML = `<b>${b.name}</b><small>${b.desc}</small>`;
-    el.addEventListener('click', () => { warp(id); save(); });
+    el.addEventListener('click', () => { if (end) startCine(id); else { warp(id); save(); } }); // the sector's last world: the cinematic first
     return el;
   }));
   closePanel(); closeTalents(); closeSettings();
@@ -1867,6 +1870,78 @@ function drawCrate(t) {
   if (crate.k >= 1 && (calm() || Math.sin(t * 5) > 0)) P.fill(x + 11, y - 10, 3, 3, C.pink); // tap me
 }
 
+// ---------- sector cinematic: after the last world of a cycle, all eight worlds alive in a row, the Commander's speech, then the warp ----------
+let cine = null; // { t, boon, planets: [{ w, seed, lush }], cycle }
+const CINE_END = 17;
+function startCine(boon) {
+  $('warp').hidden = true; // the dialog goes, the shield stays: nothing behind is reachable until the warp
+  const first = S.world + 1 - WORLDS.length;
+  cine = { t: 0, boon, cycle: Math.floor((S.world + 1) / WORLDS.length) + 1, planets: WORLDS.map((w, i) => ({ w, seed: 11 + (first + i) * 7, lush: null })) };
+  Object.assign(cam, { z: 1, fx: W / 2, fy: H / 2, ax: W / 2, ay: H / 2 });
+  document.documentElement.classList.add('cine'); $('cineskip').hidden = false; $('cineskip').focus();
+  $('guide').inert = false; // the commander speaks over it (his lines advance by themselves)
+  play('milestone');
+  guide([
+    { text: `${WORLDS.length} worlds, Engineer. ${WORLDS.length} dead rocks, and every one of them is breathing now.`, auto: true },
+    { text: 'The Corps has never logged anything like it. Neither have I.', auto: true },
+    { text: `But the dark out there is bigger than one sector. Cycle ${roman(cine.cycle)} starts now. Let's go.`, auto: true },
+  ]);
+}
+function endCine() {
+  if (!cine) return;
+  const boon = cine.boon;
+  cine = null;
+  document.documentElement.classList.remove('cine'); $('cineskip').hidden = true;
+  if (!$('guide').hidden) { gi = gLines.length - 1; nextLine(); } // cut the speech short if skipped
+  warp(boon); save();
+}
+$('cineskip').addEventListener('click', endCine);
+const planetAt = i => { // one row of eight on wide screens, two rows of four on tall ones
+  const tall = H > W, cols = tall ? 4 : 8, gap = W / (cols + 1), r = Math.round(Math.min(gap * .36, H * (tall ? .09 : .13)));
+  return { x: Math.round(gap * (i % cols + 1)), y: Math.round(H * (tall ? (i < cols ? .26 : .5) : .38)), r };
+};
+function stepCine(t, dt) {
+  const c = cine; c.t += dt;
+  if (c.t >= CINE_END) return endCine();
+  const due = c.planets.findIndex(p => !p.lush); // build one world's texture per frame, just ahead of its entrance
+  if (due >= 0 && c.t > due * .7) c.planets[due].lush = makeLush(c.planets[due].w, c.planets[due].seed);
+  // scene: the sky, then each world popping in
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  for (const [x, y, k] of stars) if (x < W && y < H) P.dot(x, y, k > 4 ? C.soft : C.dot);
+  c.planets.forEach((p, i) => {
+    const at = .8 + i * .7, k = Math.min(1, (c.t - at) / .4);
+    if (k <= 0 || !p.lush) return;
+    const { x, y, r } = planetAt(i), rr = Math.max(2, Math.round(r * (calm() ? 1 : 1 - (1 - k) ** 3)));
+    for (let d = rr + 4; d > rr; d--) { ctx.globalAlpha = .25; P.ring(x, y, d, d, 0, 2 * Math.PI, `rgb(${p.w.ag})`); } // glow
+    ctx.globalAlpha = 1;
+    for (let dx = -rr; dx < rr; dx++) { // a small spinning globe
+      const h = Math.round(2 * Math.sqrt(rr * rr - (dx + .5) ** 2)), u = Math.floor((((calm() ? 0 : c.t * 8 + i * 30) + (Math.asin((dx + .5) / rr) / Math.PI + .5) * TW / 2) % TW + TW) % TW);
+      ctx.drawImage(p.lush, u, 0, 1, TH, x + dx, y - h / 2, 1, h);
+    }
+    for (let dy = -rr; dy < rr; dy++) { const hw = Math.sqrt(rr * rr - (dy + .5) ** 2); P.fill(x + hw * .3, y + dy, hw * .7, 1, 'rgba(20,18,40,.35)'); } // night side
+    P.ring(x, y, rr, rr, 0, 2 * Math.PI, C.line);
+  });
+  flash = Math.max(0, flash - dt * 1.2);
+  present(t);
+  // names and best times at screen resolution (crisp text), then the cycle title
+  const fs = Math.max(15, Math.round(9 * K)), z = K;
+  out.textAlign = 'center'; out.textBaseline = 'top';
+  c.planets.forEach((p, i) => {
+    const a = Math.min(1, (c.t - .8 - i * .7 - .3) / .5);
+    if (a <= 0) return;
+    const { x, y, r } = planetAt(i);
+    out.globalAlpha = a;
+    out.font = `${fs}px VT323, monospace`; out.fillStyle = C.line; out.fillText(p.w.name, x * z, (y + r + 8) * z);
+    out.font = `${Math.round(fs * .85)}px VT323, monospace`; out.fillStyle = C.soft; out.fillText(S.best[p.w.name] !== undefined ? mmss(S.best[p.w.name]) : '-', x * z, (y + r + 8) * z + fs * 1.1);
+  });
+  const ta = Math.min(1, (c.t - 12) / 1.2);
+  if (ta > 0) {
+    out.globalAlpha = ta; out.font = `${Math.round(fs * 3)}px VT323, monospace`; out.fillStyle = C.pink;
+    out.fillText(`CYCLE ${roman(c.cycle)}`, W * z / 2, H * z * (H > W ? .66 : .62));
+  }
+  out.globalAlpha = 1;
+}
+
 // ---------- loop ----------
 let uiTick = 0, resume = true, panelH = 0, autoT = 0, paidAt = 0; // resume: skip one income gap after a hidden tab (away() already paid it)
 let errors = 0;
@@ -1885,6 +1960,7 @@ function step(ms) {
   else { const g = rateOf() * gap; S.life += g; S.earned += g; }
   const heal = healOf(S.earned);
   off = (off + dt * 6) % TW;
+  if (cine) return stepCine(t, dt);
   shake = calm() ? 0 : Math.max(0, shake - dt * 3); flash = Math.max(0, flash - dt * 1.2);
   if (heal >= 1 && !S.done) showWarp();
   const aps = has('autotap2') ? 4 : has('autotap') ? 1 : 0; // Tap Bot / Tap Swarm: automatic taps per second
