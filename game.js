@@ -53,7 +53,7 @@ const sysOut = (s, live = true) => sysRate(s, S.L[s]) * boost() * allMul() * ((S
 const rateOf = (live = true) => SYS.reduce((a, _, s) => a + (S.on[s] ? sysOut(s, live) : 0), 0);
 const pay = (secs, min) => Math.max(min * priceScale(), rateOf(false) * secs); // one-off rewards: secs of base income, at least min (scaled)
 const tapGain = () => tapOf(rateOf()) * (has('spark') ? 3 : 1) * (has('tapecho') ? 1.5 : 1) * (trait().tap || 1) * (S.boon === 'hands' ? 3 : 1); // one tap, before a crit
-const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (has('thrift') ? .9 : 1) * (S.boon === 'bulk' ? .8 : 1)); // level l -> l+1 of upgrade k
+const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (has('thrift') ? .9 : 1) * (S.boon === 'bulk' ? .8 : 1) * (trait().price || 1)); // level l -> l+1 of upgrade k
 const unlockCost = s => Math.ceil(SYS[s].unlock * priceScale() * (has('cheap') ? .75 : 1));
 const rewardOf = g => g.reward * priceScale() * (has('patron') ? 3 : 1) * (trait().reward || 1);
 const unlocked = s => s === 0 || S.on[s - 1];
@@ -419,13 +419,19 @@ function field(seed) {
 const frac = v => v - Math.floor(v);
 
 // Alive map: swirling seas with current lines, a bright coast, two-tone land, ragged polar caps.
+// The world's shape (WORLDS[].lush): ocean share, ice-cap size, gas-giant bands or rivers.
 function makeLush(w, seed) {
-  const { e, q } = field(seed), sea = q(.5), shore = q(.55), high = q(.84);
+  const L = w.lush || {}, { e, q } = field(seed), share = L.sea ?? .5, sea = q(share), shore = q(share + .05), high = q(.84);
   const [s0, s1, co, l0, l1, cap] = [w.sea[0], w.sea[1], w.coast, w.land[0], w.land[1], w.caps].map(rgb);
   return texMap((x, y) => {
     const v = e[y * TW + x], lat = Math.abs((y + .5) / TH - .5) * 2;
-    if (lat > .9 + .08 * (vnoise(x, y, 8, seed + 9) - .5)) return cap;
+    if (L.bands) { // swirling stripes, thin pale lanes between them
+      const b = y / TH * 7 + 1.6 * (swirl(x, y, seed + 5) - .5);
+      return frac(b) < .07 ? cap : [s0, s1, l0, co, l1][(Math.floor(b) % 5 + 5) % 5];
+    }
+    if (lat > (L.caps ?? .9) + .08 * (vnoise(x, y, 8, seed + 9) - .5)) return cap;
     if (v < sea) return frac(v * 16) < .16 ? s1 : s0; // contour lines on the water read as swirling currents
+    if (L.rivers && v > shore && frac(v * 22) < .07) return s1; // rivers winding across the land
     return v < shore ? co : v > high || frac(v * 16) < .1 ? l1 : l0; // highlands, plus swirl strokes across the land
   });
 }
@@ -1927,7 +1933,7 @@ function startEvent(id = Object.keys(EVENTS)[Math.random() * 3 | 0]) {
   if (id === 'comet') comet = { x: -16, y: TOP + 20 + Math.random() * Math.max(10, CY - R - TOP - 50), vx: (W + 32) / ev.dur }; // crosses the open sky above the planet
   toast(`${ev.name}! ${ev.text}`, true); play('milestone'); shake = .5; quip(QUIPS[id], true);
 }
-function endEvent() { ev = null; comet = null; evNext = (120 + Math.random() * 120) / (S.boon === 'storm' ? 3 : 1); } // Storm Season: 3x as often
+function endEvent() { ev = null; comet = null; evNext = (120 + Math.random() * 120) / (S.boon === 'storm' ? 3 : 1) / (trait().events || 1); } // Storm Season and storm worlds: more often
 function catchComet() {
   const g = pay(60, 100);
   earn(g); S.n.comet++; buzz([30, 30, 60]);
@@ -2067,9 +2073,10 @@ function endCine() {
   warp(boon); save();
 }
 $('cineskip').addEventListener('click', endCine);
-const planetAt = i => { // one row of eight on wide screens, two rows of four on tall ones
-  const tall = H > W, cols = tall ? 4 : 8, gap = W / (cols + 1), r = Math.round(Math.min(gap * .36, H * (tall ? .09 : .13)));
-  return { x: Math.round(gap * (i % cols + 1)), y: Math.round(H * (tall ? (i < cols ? .26 : .5) : .38)), r };
+const planetAt = i => { // rows of six on wide screens, four on tall ones
+  const tall = H > W, cols = tall ? 4 : 6, rows = Math.ceil(WORLDS.length / cols), gap = W / (cols + 1), step = .5 / rows;
+  const r = Math.round(Math.min(gap * .34, H * step * .32));
+  return { x: Math.round(gap * (i % cols + 1)), y: Math.round(H * (.16 + step * (i / cols | 0))), r };
 };
 function stepCine(t, dt) {
   const c = cine; c.t += dt;
@@ -2108,7 +2115,7 @@ function stepCine(t, dt) {
   const ta = Math.min(1, (c.t - 12) / 1.2);
   if (ta > 0) {
     out.globalAlpha = ta; out.font = `${Math.round(fs * 3)}px VT323, monospace`; out.fillStyle = C.pink;
-    out.fillText(`CYCLE ${roman(c.cycle)}`, W * z / 2, H * z * (H > W ? .66 : .62));
+    out.fillText(`CYCLE ${roman(c.cycle)}`, W * z / 2, H * z * .7);
   }
   out.globalAlpha = 1;
 }

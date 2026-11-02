@@ -75,6 +75,10 @@ const LOADOUTS = [ // one per world, no two alike
   ['lance', 'solar', 'asteroid', 'volcano', 'hydro', 'core'],
   ['laser', 'ion', 'asteroid', 'driver', 'forge', 'core'],
   ['lance', 'coil', 'drone', 'volcano', 'hydro', 'antimatter'],
+  ['striker', 'solar', 'pod', 'volcano', 'bio', 'star'],
+  ['laser', 'coil', 'asteroid', 'driver', 'hydro', 'antimatter'],
+  ['lance', 'ion', 'drone', 'rocket', 'forge', 'antimatter'],
+  ['striker', 'ion', 'pod', 'driver', 'hydro', 'star'],
 ];
 let SYS;
 const setLoadout = w => { SYS = LOADOUTS[w % LOADOUTS.length].map((id, s) => ({ id, ...CATALOG[id], ...TIER[s] })); };
@@ -115,7 +119,10 @@ const GOALS = [
 // x root, o octave, 5 fifth, . hold; arp: { pat: chord tones (-1 rest), rate in 16ths, oct, len in 16ths, wave, echo };
 // drums: one bar per instrument (k kick, s snare, h hat); leadAt / drumsAt: how healed before the melody / drums join (above 1: never);
 // sparkle: { p: chance per bar, notes } to use a fixed set of high notes instead of chord tones.
-// trait: what this world changes while you are on it (orbit/ground multiply those systems, tap multiplies taps, reward the goal rewards).
+// trait: what this world changes while you are on it (orbit/ground multiply those systems, tap multiplies taps, reward the goal rewards,
+// events makes events that many times as frequent, price multiplies upgrade prices).
+// lush (optional): the healed surface's shape. sea: share of ocean (default .5); caps: latitude where the ice caps start (default .9);
+// bands: a gas giant's swirling stripes instead of land and sea; rivers: rivers winding across the land.
 const WORLDS = [
   { name: 'CRIMSON', music: { style: 'the original theme', bpm: 80, key: 0, mode: 'minor', bright: 2400, prog: [[0, -2, -5, -1], [0, -2, -5, -1]], // Am F C G, as at launch
     pad: 'triangle', padVol: .035, bassWave: 'triangle', bass: 'x.......x.......', bassRelease: .4, lead: 'triangle', leadAt: 2, // no melody
@@ -172,6 +179,34 @@ const WORLDS = [
     dead: [[10, 8, 14], [24, 18, 34], [44, 32, 60], [80, 60, 104]], crater: '#000000', dg: [140, 90, 180], ag: [255, 170, 90],
     trait: { tap: 5, orbit: .75, ground: .75, text: 'Glass crust: taps x5, systems x0.75' },
     fact: 'Obsidian is volcanic glass: lava that cooled too fast for crystals to grow.' },
+  { name: 'NEBULA', music: { style: 'dreamy synthwave', bpm: 84, key: 3, mode: 'dorian', bright: 2800, prog: [[0, 3, 4, 3], [5, 3, 6, 4]],
+    pad: 'sawtooth', chorus: true, bassWave: 'sawtooth', bass: 'x...x...x...x...', lead: 'sine', echo: true, leadAt: .25,
+    arp: { pat: [0, 2, 4, 3], rate: 2, oct: 1, len: 1.5, wave: 'square' }, drums: { k: 'x.......x.......', s: '....x.......x...' }, drumsAt: .5 },
+    lush: { bands: true }, sea: ['#3b2a6e', '#5a3f9a'], coast: '#ffd1a8', land: ['#f29ac6', '#ffc0dc'], caps: '#fff0f8',
+    dead: [[30, 26, 40], [54, 46, 70], [86, 74, 104], [130, 118, 150]], crater: '#18141f', dg: [150, 130, 190], ag: [240, 170, 220],
+    trait: { events: 2, text: 'Ion storms: events twice as often' },
+    fact: 'Jupiter’s colourful bands are clouds of ammonia ice, stretched into stripes by winds of over 500 km/h.' },
+  { name: 'OCEANUS', music: { style: 'island groove', bpm: 88, key: 5, mode: 'major', swing: .15, bright: 4200, prog: [[0, 3, 4, 3], [0, 5, 3, 4]],
+    pad: null, bassWave: 'triangle', bass: 'x.....x.x.......', lead: 'triangle', leadAt: .25,
+    arp: { pat: [-1, 0, -1, 1, -1, 2, -1, 1], rate: 2, oct: 1, len: .8, wave: 'triangle' }, drums: { k: 'x.......x.......', s: '....x.......x...', h: '..x...x...x...x.' }, drumsAt: .25 },
+    lush: { sea: .78 }, sea: ['#063d5c', '#0a5e82'], coast: '#ffe7a3', land: ['#2fbf8f', '#7be0b0'], caps: '#e9fbff',
+    dead: [[40, 46, 52], [62, 72, 78], [92, 104, 110], [132, 146, 150]], crater: '#20262a', dg: [140, 160, 170], ag: [90, 200, 230],
+    trait: { price: .8, text: 'Calm seas: upgrades cost 20% less' },
+    fact: 'The exoplanet K2-18 b may be a “hycean” world: a planet covered by a deep ocean under a hydrogen sky.' },
+  { name: 'GLACIA', music: { style: 'frozen plucks', bpm: 72, key: -4, mode: 'minor', bright: 4800, prog: [[0, 5, 3, 4], [5, 3, 0, 4]],
+    pad: 'sine', chorus: true, bassWave: 'sine', bass: 'x.......5.......', lead: 'sine', echo: true, leadAt: .25,
+    arp: { pat: [0, 1, 2, 3, 4, 3, 2, 1], rate: 2, oct: 1, len: 1.4, wave: 'triangle', echo: true }, drums: { h: 'x.x.x.x.x.x.x.x.' }, drumsAt: .5 },
+    lush: { caps: .74, sea: .56 }, sea: ['#0b1a44', '#173a7a'], coast: '#5fb8ff', land: ['#9ccbf0', '#e2f2ff'], caps: '#ffffff',
+    dead: [[22, 24, 36], [38, 42, 60], [60, 66, 92], [96, 104, 136]], crater: '#0e1018', dg: [120, 130, 170], ag: [170, 220, 255],
+    trait: { orbit: 2, tap: .5, text: 'Thin air: orbital systems x2, taps x0.5' },
+    fact: 'Pluto has mountains of water ice as tall as the Rockies, sitting on plains of frozen nitrogen.' },
+  { name: 'EDEN', music: { style: 'triumphant anthem', bpm: 120, key: 2, mode: 'major', bright: 5200, prog: [[0, 4, 5, 3], [0, 3, 4, 4]],
+    pad: 'triangle', bassWave: 'square', bass: 'x.o.x.o.x.o.x.o.', lead: 'sawtooth', leadAt: .25,
+    arp: { pat: [0, 1, 2, 3, 4, 3, 2, 1], rate: 1, oct: 1, len: .9, wave: 'square' }, drums: { k: 'x...x...x...x...', s: '....x.......x...', h: '..x...x...x...x.' }, drumsAt: .25 },
+    lush: { sea: .32, rivers: true }, sea: ['#0b4f6c', '#127a8f'], coast: '#ffe08a', land: ['#1f8a3c', '#45c25a'], caps: '#f4ffe9',
+    dead: [[46, 34, 26], [78, 58, 40], [118, 88, 58], [164, 128, 88]], crater: '#24180f', dg: [200, 150, 100], ag: [140, 230, 150],
+    trait: { ground: 1.25, reward: 2, text: 'Fertile soil: ground systems x1.25, goal rewards x2' },
+    fact: 'Earth is the only world known to have life, yet about a fifth of Sun-like stars may have an Earth-sized planet in the habitable zone.' },
 ];
 const world = () => WORLDS[S.world % WORLDS.length];
 const trait = () => world().trait || {};
