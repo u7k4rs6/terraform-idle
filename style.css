@@ -155,3 +155,7 @@ html.calm #guide.talk #gface { animation: none; } /* reduced motion: the command
 #alist li.on b { color: var(--pink); }
 #warp .srow { justify-content: center; border: 0; padding-top: 12px; }
 #warp .srow button { padding: 4px 10px; border: 2px solid var(--dim); color: var(--soft); }
+#guide.quip #gface, #guide.quip #gskip { display: none; } /* passing remark: just the bubble */
+#guide.quip #gbox { margin-left: 8px; }
+#guide.quip #gbubble { width: min(340px, calc(100vw - 40px)); }
+#guide.quip #gbubble::before { display: none; } /* no portrait to point at */

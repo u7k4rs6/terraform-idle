@@ -1125,7 +1125,10 @@ function rowClick(k) {
     if (!n || S.life < c) return play('deny');
     S.life -= c; L[k] += n; play('buy');
     burst(x, y, [C.pink, C.line], 14 + 2 * n, 40);
-    if (markOf(s) > m0) { toast(`${sy.name} refit: Mark ${MARK[markOf(s)]}.`); play('talent'); burst(x, y, [C.sun, C.line], 30, 50); }
+    if (markOf(s) > m0) {
+      toast(`${sy.name} refit: Mark ${MARK[markOf(s)]}.`); play('talent'); burst(x, y, [C.sun, C.line], 30, 50);
+      if (markOf(s) === 3) quip(QUIPS.mark4, true); else if (!S.ach.includes('mk2')) quip(QUIPS.mark2, true); // first refit ever
+    }
   }
   fire(s, true);
   updateUI();
@@ -1303,9 +1306,11 @@ $('goal').addEventListener('click', () => {
   if (s >= 0) openPanel(s); else closePanel();
 });
 
+let speedSaid = true;
 function showWarp() { // the world just hit 100%: log the run, then offer the warp
   const name = world().name, s = Math.round(last - S.start);
   S.done = true; S.best[name] = Math.min(S.best[name] ?? Infinity, s);
+  speedSaid = s >= 300; // a sub-5-minute heal earns a remark once the player chooses Stay
   burst(CX, CY, [C.line, C.pink, C.soft], 80, 90);
   openWarp();
 }
@@ -1327,6 +1332,7 @@ $('warpshare').addEventListener('click', async () => { // brag: the system share
 });
 $('warpstay').addEventListener('click', () => { // admire the living planet; the goal bar keeps the warp ready
   $('warp').hidden = true; shield(false); play('ui');
+  if (!speedSaid) { speedSaid = true; quip(QUIPS.speed, true); }
   $('goal').focus({ preventScroll: true });
 });
 
@@ -1450,12 +1456,38 @@ function makeVos(frame) {
   return c.toDataURL();
 }
 const FACE = [makeVos(0), makeVos(1)];
-let gLines = [], gi = 0, gShown = 0, gTimer = 0, gIntro = false;
+let gLines = [], gi = 0, gShown = 0, gTimer = 0, gIntro = false, quipTimer = 0, quipAt = -1e9;
 function guide(lines, intro = false) {
+  clearTimeout(quipTimer); $('guide').classList.remove('quip'); // a briefing replaces any passing remark
   gLines = lines; gi = 0; gIntro = intro;
   $('guide').hidden = false;
   sayLine();
 }
+// A passing remark: one line in the bubble (no portrait, no Skip) that goes away by itself. Never over a briefing or a dialog,
+// at most one every 25 s unless `force` (important news like the welcome back).
+function quip(lines, force = false) {
+  const now = performance.now();
+  if (!$('guide').hidden || $('c').inert || !S.intro || (!force && now - quipAt < 25e3)) return false;
+  quipAt = now;
+  gLines = [{ text: Array.isArray(lines) ? lines[Math.random() * lines.length | 0] : lines, auto: true }]; gi = 0; gIntro = false;
+  $('guide').classList.add('quip'); $('guide').hidden = false;
+  sayLine();
+  return true;
+}
+// what Vos says when something happens
+const QUIPS = {
+  shower: ['Meteors inbound! Tap fast, every hit counts five times.', 'Rock storm. Get those fingers moving, Engineer.'],
+  flare: ['Solar flare! Everything we built is running hot.', 'The star is flaring. Enjoy the free power.'],
+  comet: ['Golden comet on the scope. Grab it before it slips away!', 'See that gold streak? Tap it. Now.'],
+  caught: ['Nice catch! That comet was worth a minute of work.', 'Ha! Straight into the cargo hold.'],
+  mark2: ['First refit done. Look at that paint job.', 'Mark II. The crew is proud of that one.'],
+  mark4: ['Mark IV. That machine is as good as it gets.', 'Fully maxed. Engineers will write songs about it.'],
+  half: ['Halfway there. I can almost smell the rain.', 'Fifty percent. This rock is starting to breathe.'],
+  speed: ['Under five minutes? That is a Corps record.', 'Fastest terraform I have ever logged.'],
+  combo: ['Look at those hands go!', 'Twenty-five in a row. Remind me never to arm-wrestle you.'],
+  crate: ['Supply drop from HQ. Courtesy of the Corps.', 'Fresh supplies. Do not spend it all in one place.'],
+  moon: ['Stop poking the moon, Engineer. ...Fine, one more.', 'The moon says hello.'],
+};
 function sayLine() { // type the line out, a few letters per tick, the portrait bobbing while it talks
   const full = val(gLines[gi].text);
   gShown = 0; $('gsr').textContent = full;
@@ -1466,14 +1498,18 @@ function sayLine() { // type the line out, a few letters per tick, the portrait 
     if (gShown % 4 === 0 && full[gShown - 1] !== ' ') play('talk'); // commander blips as he talks
     $('gsay').textContent = full.slice(0, gShown);
     $('gface').src = FACE[(gShown >> 3) & 1]; // comm light blinks while talking
-    if (gShown >= full.length) { clearInterval(gTimer); $('guide').classList.remove('talk'); $('gface').src = FACE[0]; updateGuide(); }
+    if (gShown >= full.length) {
+      clearInterval(gTimer); $('guide').classList.remove('talk'); $('gface').src = FACE[0]; updateGuide();
+      if (gLines[gi]?.auto) quipTimer = setTimeout(nextLine, 4500); // a remark lingers a few seconds, then goes
+    }
   }, 30);
   updateGuide();
 }
 function nextLine() {
+  clearTimeout(quipTimer);
   if (++gi < gLines.length) return sayLine();
   clearInterval(gTimer);
-  $('guide').hidden = true;
+  $('guide').hidden = true; $('guide').classList.remove('quip');
   if (gIntro) { S.intro = true; save(); }
 }
 $('gbubble').addEventListener('click', () => {
@@ -1488,7 +1524,7 @@ function updateGuide() {
   if ($('guide').hidden) return;
   const l = gLines[gi], done = gShown >= val(l.text).length;
   if (l.until && l.until()) return nextLine();
-  set($('ghint'), l.until ? '&gt; ' + val(l.hint) : done ? '&gt; tap to continue' : '');
+  set($('ghint'), l.until ? '&gt; ' + val(l.hint) : done && !l.auto ? '&gt; tap to continue' : '');
   $('ghint').classList.toggle('wait', !!l.until);
   $('guide').classList.toggle('compact', sel >= 0); // panel open: hide the portrait, keep the bubble above the panel and arrows
   $('guide').style.bottom = (sel >= 0 ? panelH + 100 : $('bar').offsetHeight - 12) + 'px'; // feet tucked behind the bar, so the talking bob never shows a gap
@@ -1553,6 +1589,7 @@ function away(since) {
   if (sec >= 30 && gain > 0) {
     const h = sec / 3600 | 0, m = (sec % 3600) / 60 | 0;
     toast(`WELCOME BACK. In ${h ? h + 'h ' : ''}${m}m away your colony made ${fmt(gain)} life.`, true);
+    if (h) setTimeout(() => quip(`${h > 1 ? h + ' hours' : 'An hour'} gone and the colony kept the lights on. ${fmt(gain)} life in the bank.`, true), 800); // after load settles
   }
   syncStage();
 }
@@ -1611,7 +1648,7 @@ const meteors = [];
 function startEvent(id = Object.keys(EVENTS)[Math.random() * 3 | 0]) {
   ev = { ...EVENTS[id], id }; evT = ev.dur;
   if (id === 'comet') comet = { x: -16, y: TOP + 20 + Math.random() * Math.max(10, CY - R - TOP - 50), vx: (W + 32) / ev.dur }; // crosses the open sky above the planet
-  toast(`${ev.name}! ${ev.text}`, true); play('milestone'); shake = .5;
+  toast(`${ev.name}! ${ev.text}`, true); play('milestone'); shake = .5; quip(QUIPS[id], true);
 }
 function endEvent() { ev = null; comet = null; evNext = 120 + Math.random() * 120; }
 function catchComet() {
@@ -1620,6 +1657,8 @@ function catchComet() {
   burst(comet.x, comet.y, [C.sun, C.line, C.pink], 40, 70); play('crit'); shake = .6;
   floats.push({ x: comet.x, y: comet.y - 10, text: '+' + fmt(g), life: 1.6, col: C.sun });
   endEvent();
+  if ($('guide').classList.contains('quip')) nextLine(); // replace the "grab it" remark, never a briefing line
+  quip(QUIPS.caught, true);
 }
 function stepEvents(dt) {
   if (ev) { if ((evT -= dt) <= 0) endEvent(); }
@@ -1657,7 +1696,7 @@ function step(ms) {
   if (aps && (autoT += dt * aps) >= 1) { autoT -= 1; tapSomewhere(); }
 
   const reached = STAGES.filter(s => heal >= s.at).length;
-  if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); shake = .8; play('milestone'); }
+  if (reached > stage) { stage = reached; toast(STAGES[stage - 1].text, true); shake = .8; play('milestone'); if (stage === 2) quip(QUIPS.half); }
   stepEvents(dt);
   zoom += (1 - zoom) * Math.min(1, dt * 1.5);
   R = Math.round(R0 * zoom);
