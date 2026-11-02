@@ -967,8 +967,9 @@ function play(name, k = 1) {
   SFX[name](k);
 }
 
-// Background music: a slow spacey loop in A minor (Am F C G), 16th-note grid, scheduled a little ahead of the clock.
-const STEP = 60 / 80 / 4, mtof = m => 440 * 2 ** ((m - 69) / 12);
+// Background music: a slow spacey loop (Am F C G in A minor, shifted per world), 16th-note grid, scheduled a little ahead of the clock.
+// Each world sets its own tempo and key (WORLDS[].music); a change lands on the next chord, so a warp never cuts a note short.
+const mood = () => world().music || [80, 0], STEP = () => 60 / mood()[0] / 4, mtof = m => 440 * 2 ** ((m - 69) / 12);
 const CHORDS = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]], SPARK = [69, 72, 74, 76, 79, 81];
 let mStep = 0, mNext = 0;
 function startMusic() {
@@ -976,15 +977,18 @@ function startMusic() {
   setInterval(() => {
     if (AC.state !== 'running' || !pref.music) return; // muted: schedule nothing
     if (mNext < AC.currentTime) mNext = AC.currentTime + .05; // resumed after a pause or unmuted: don't play the backlog
-    while (mNext < AC.currentTime + .35) { musicStep(mStep, mNext); mStep = (mStep + 1) % 64; mNext += STEP; }
+    while (mNext < AC.currentTime + .35) { musicStep(mStep, mNext); mStep = (mStep + 1) % 64; mNext += STEP(); }
   }, 100);
 }
+let key = 0; // the key in use, switched only at a chord change
 function musicStep(s, t) {
-  const beat = s & 15, ch = CHORDS[s >> 4], m = { t, bus: musicBus };
-  if (beat === 0) ch.forEach(n => tone({ ...m, f: mtof(n), type: 'triangle', dur: STEP * 16, vol: .035, attack: .6, release: 1 })); // pad
-  if (beat % 8 === 0) tone({ ...m, f: mtof(ch[0] - 24), type: 'triangle', dur: STEP * 7, vol: .11, attack: .01, release: .4 }); // bass
-  if (beat % 2 === 0) tone({ ...m, f: mtof(ch[[0, 1, 2, 1, 0, 2, 1, 2][beat >> 1]] + 12), type: 'square', dur: STEP * 1.8, vol: .018 }); // arpeggio
-  if (beat === 10 && Math.random() < .4) tone({ ...m, f: mtof(SPARK[Math.random() * SPARK.length | 0] + 12), type: 'sine', dur: STEP * 10, vol: .03, attack: .05, release: .8 }); // sparkle
+  const beat = s & 15, m = { t, bus: musicBus }, len = STEP(); // one 16th note at this world's tempo
+  if (beat === 0) key = mood()[1];
+  const ch = CHORDS[s >> 4].map(n => n + key);
+  if (beat === 0) ch.forEach(n => tone({ ...m, f: mtof(n), type: 'triangle', dur: len * 16, vol: .035, attack: .6, release: 1 })); // pad
+  if (beat % 8 === 0) tone({ ...m, f: mtof(ch[0] - 24), type: 'triangle', dur: len * 7, vol: .11, attack: .01, release: .4 }); // bass
+  if (beat % 2 === 0) tone({ ...m, f: mtof(ch[[0, 1, 2, 1, 0, 2, 1, 2][beat >> 1]] + 12), type: 'square', dur: len * 1.8, vol: .018 }); // arpeggio
+  if (beat === 10 && Math.random() < .4) tone({ ...m, f: mtof(SPARK[Math.random() * SPARK.length | 0] + 12 + key), type: 'sine', dur: len * 10, vol: .03, attack: .05, release: .8 }); // sparkle
 }
 
 // ---------- achievements: lifetime trophies, listed in the settings sheet ----------
