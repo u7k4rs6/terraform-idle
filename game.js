@@ -1,7 +1,7 @@
 'use strict';
 
 // Muted slate night, white line-art, soft pink accents.
-const C = { bg: '#2b3047', deep: '#1f2333', line: '#e9ecf5', dim: '#59607f', dot: '#6f79a3', soft: '#8f99c4', pink: '#e98aa3', sil: '#1c2030', sun: '#ffe08a', zap: '#bfe6ff', lava: '#ff8a3d', gas: '#c9d6b8' };
+const C = { bg: '#2b3047', deep: '#1f2333', line: '#e9ecf5', dim: '#59607f', dot: '#6f79a3', soft: '#8f99c4', pink: '#e98aa3', sil: '#1c2030', sun: '#ffe08a', zap: '#bfe6ff', lava: '#ff8a3d', gas: '#c9d6b8', plasma: '#c58cff', water: '#7fd3ff' };
 
 const priceScale = () => PRICE_GROWTH ** S.world; // prices, taps and flat rewards grow with the warp boost
 const ucost = (s, k, l) => Math.ceil(SYS[s].unlock * UPM[k][0] * UPM[k][1] ** l * priceScale());
@@ -179,7 +179,8 @@ const diagLight = (x, y, w, h) => 1 - (x / w + y / h) / 2; // sun from the top-l
 
 // Hand-drawn line-art for the six systems (native resolution, 1px lines).
 // Where shots leave each sprite, relative to its centre (default: the centre).
-const MUZZLE = { laser: [-30, 16], striker: [-28, 16], coil: [0, 19], asteroid: [24, 15], volcano: [0, -8], forge: [8, -16], antimatter: [0, -7] }; // laser/striker: the tip, local (-25|-26, 0) rotated and scaled
+const MUZZLE = { laser: [-30, 16], striker: [-28, 16], coil: [0, 19], asteroid: [24, 15], volcano: [0, -8], forge: [8, -16], antimatter: [0, -7],
+  lance: [-30, 18], ion: [0, 14], pod: [10, 2], driver: [11, -12], hydro: [14, -13], star: [0, -2] }; // laser/striker: the tip, local (-25|-26, 0) rotated and scaled
 const ART = {
   // long drill-cannon angled down-left at the planet: slot panel, vent ribs, rear cap, tapered nose, needle nozzle, battery packs
   laser: art(64, 42, p => {
@@ -306,6 +307,54 @@ const ART = {
     p.ring(17, 16, 12, 3, Math.PI, 2 * Math.PI, C.dim); // field ring, back half
     p.disc(17, 16, 6); p.disc(17, 16, 3, C.pink); // orb
     p.ring(17, 16, 12, 3, 0, Math.PI); // field ring, front half
+  }),
+  // plasma lance angled down-left: power housing with a glowing cell, a barrel ringed with focusing coils, a crystal tip
+  lance: art(64, 42, p => {
+    const r = p.rot(34, 22, -.5, 1.3);
+    r.seg(20, -4, 24, -7); r.seg(20, 4, 24, 7); // fins
+    r.rect(8, -6, 12, 12); r.rect(11, -9, 6, 3, C.pink); // housing and its cell
+    r.rect(-20, -2, 28, 4); r.seg(-19, 0, 7, 0, C.dim); // barrel
+    for (const x of [-16, -9, -2, 5]) r.rect(x, -4, 2, 8, C.pink); // focusing coils
+    r.poly([[-20, -3], [-27, 0], [-20, 3]], C.pink); r.dot(-28, 0, C.line); // crystal tip
+  }),
+  // ion cannon satellite: two solar wings, a body with a glowing core, a dish facing down at the planet
+  ion: art(52, 34, p => {
+    for (const x0 of [0, 40]) { p.box(x0, 6, 12, 7); for (let k = 3; k < 11; k += 3) p.line(x0 + k, 7, x0 + k, 11, C.dim); }
+    p.line(12, 9, 18, 9); p.line(34, 9, 40, 9); // arms
+    p.box(18, 1, 16, 15); p.fill(22, 4, 8, 4, C.pink); p.line(20, 11, 31, 11, C.dim); // body and core
+    p.poly([[15, 16], [37, 16], [32, 24], [20, 24]]); p.line(19, 18, 33, 18, C.dim); // dish
+    p.line(26, 24, 26, 30); p.dot(26, 31, C.pink); p.dot(26, 32, C.pink); // emitter
+  }),
+  // seed missile pod: a hovering launcher, six tubes with pink warheads, an antenna, two thrusters
+  pod: art(44, 34, p => {
+    p.box(5, 6, 31, 18); p.line(6, 15, 34, 15, C.dim);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { p.box(8 + i * 9, 8 + j * 8, 7, 5); p.fill(10 + i * 9, 10 + j * 8, 3, 1, C.pink); }
+    p.line(34, 6, 40, 0); p.dot(40, 0, C.pink); p.dot(41, 1, C.pink); // antenna
+    for (const x of [9, 26]) { p.box(x, 24, 7, 4); p.fill(x + 2, 28, 3, 3, C.pink); } // thrusters
+  }),
+  // mass driver: a magnetic rail ramp aimed up at the planet, coils along it, a capsule waiting at the top
+  driver: art(34, 34, p => {
+    p.box(0, 28, 34, 6); p.line(3, 31, 30, 31, C.dim); // base
+    p.line(22, 12, 24, 28); p.line(14, 20, 15, 28); // struts
+    p.poly([[3, 28], [25, 6], [30, 9], [10, 28]]); // rail
+    for (let k = 0; k < 4; k++) p.fill(9 + k * 5, 22 - k * 5, 3, 2, C.pink); // coils
+    p.box(25, 2, 6, 5); p.dot(27, 4, C.pink); // capsule
+  }),
+  // hydro cannon: a water tower on legs, a pressure gauge, a nozzle aimed up-right
+  hydro: art(34, 32, p => {
+    p.line(7, 20, 4, 28); p.line(17, 20, 20, 28); p.line(5, 25, 19, 25, C.dim); // legs
+    p.box(0, 28, 26, 4); // base
+    p.disc(12, 12, 9); p.line(4, 14, 20, 14, C.dim); p.disc(12, 9, 2, C.pink); // tank, waterline, gauge
+    p.line(19, 8, 28, 2); p.line(20, 10, 29, 4); p.box(27, 0, 6, 5); p.dot(30, 2, C.pink); // nozzle
+  }),
+  // star forge: a containment frame holding a tiny star, ring arcs around it
+  star: art(34, 32, p => {
+    p.box(2, 26, 30, 6); p.line(5, 29, 28, 29, C.dim); // base
+    p.line(6, 26, 9, 5); p.line(28, 26, 25, 5); p.box(8, 2, 18, 4); // frame
+    p.ring(17, 15, 13, 4, Math.PI, 2 * Math.PI, C.dim); // ring, back half
+    p.disc(17, 15, 6, C.pink); p.disc(17, 15, 3, C.line); // the star
+    for (const [x, y] of [[17, 7], [17, 23], [9, 15], [25, 15]]) p.dot(x, y, C.pink); // rays
+    p.ring(17, 15, 13, 4, 0, Math.PI); // ring, front half
   }),
 };
 // Marks: a system's look grows with its best upgrade (Lv 10 / 25 / 50): the pink accents turn cyan, gold, then white (Mark IV also glows).
@@ -635,6 +684,17 @@ function fire(s, real) {
   if (shot === 'beam') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.pink, end: true }); return land(s, tx, ty, real); }
   if (shot === 'pulse') { pulses.push({ r: R * .2, life: 1 }); return land(s, tx, ty, real); }
   if (shot === 'arc') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.zap, end: true, fade: 4, zig: true }); return land(s, tx, ty, real); }
+  if (shot === 'plasma') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.plasma, w: 3, end: true, fade: 3 }); return land(s, tx, ty, real); }
+  if (shot === 'ion') { // cyan particle beam, a shockwave where it lands
+    beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.zap, w: 2, end: true, fade: 2.5 });
+    pulses.push({ x: tx, y: ty, r: 2, life: 1, col: C.zap });
+    return land(s, tx, ty, real);
+  }
+  if (shot === 'flare') { pulses.push({ r: R * .2, life: 1, col: C.sun }); return land(s, tx, ty, real); } // a planet-wide golden ring
+  if (shot === 'swarm') { // three seed missiles on curving paths; only the first pays out
+    for (let k = 0; k < 3; k++) shots.push({ s, sx, sy, tx: tx + (k - 1) * 6, ty: ty + (k - 1) * 4, t: 0, dur: .7 + k * .08, real: real && !k, quiet: k > 0, curve: (k - 1) * 22 + 12 });
+    return;
+  }
   if (shot === 'annihilate') { // white beam, then a shockwave ring where it hits
     beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.line, w: 3, end: true, fade: 3 });
     pulses.push({ x: tx, y: ty, r: 2, life: 1, col: C.line });
@@ -644,14 +704,15 @@ function fire(s, real) {
     for (let k = 0; k < 3; k++) shots.push({ s, sx, sy, tx: tx + (k - 1) * 7, ty: ty + (Math.random() - .5) * 8, t: 0, dur: .8 + k * .12, real: real && !k, quiet: k > 0 });
     return;
   }
-  const dur = { rod: .28, lava: 1.1, gas: 1.7 }[shot] ?? .7 + Math.random() * .3; // rods are fast, lava bombs lob, gas drifts
+  const dur = { rod: .28, lava: 1.1, gas: 1.7, capsule: .9, water: 1 }[shot] ?? .7 + Math.random() * .3; // rods are fast, lava bombs and capsules lob, gas drifts
   shots.push({ s, sx, sy, tx, ty, t: 0, dur, real });
 }
 // Seconds between automatic shots: more crew fires faster.
 const cadence = s => Math.max(.6, 4 / Math.sqrt(1 + S.L[s][0]));
 function land(s, x, y, real, quiet) { // quiet: extra chunks of a spray, no pop-up
-  const shot = SYS[s].shot, big = ['rocket', 'pulse', 'rod', 'lava', 'annihilate'].includes(shot);
-  burst(x, y, shot === 'lava' ? [C.lava, C.sun, C.line] : shot === 'arc' ? [C.zap, C.line] : [C.line, C.pink, C.soft], real ? 24 : quiet ? 3 : 7, big ? 60 : 35);
+  const shot = SYS[s].shot, big = ['rocket', 'pulse', 'rod', 'lava', 'annihilate', 'capsule', 'flare', 'ion'].includes(shot);
+  const tint = { lava: [C.lava, C.sun, C.line], arc: [C.zap, C.line], ion: [C.zap, C.line], plasma: [C.plasma, C.line], water: [C.water, C.line], flare: [C.sun, C.line] }[shot];
+  burst(x, y, tint || [C.line, C.pink, C.soft], real ? 24 : quiet ? 3 : 7, big ? 60 : 35);
   if (big) { shake = Math.max(shake, real ? .7 : .2); play('boom', real ? 1 : .3); }
   if (quiet) return;
   if (real) { const [u, v] = texPos(x, y); items.push({ u, v, born: last }); if (items.length > 300) items.splice(0, items.length - 150); }
@@ -851,13 +912,18 @@ function draw(t, heal) {
   if (!photo) SYS.forEach((_, s) => drawMarks(s, t)); // a photo is the scene only: no labels, prices or brackets
 
   for (const s of shots) {
-    const k = s.t / s.dur, x = s.sx + (s.tx - s.sx) * k, shot = SYS[s.s].shot;
-    const y = s.sy + (s.ty - s.sy) * k - (shot === 'lava' ? Math.sin(k * Math.PI) * 28 : 0); // lava bombs arc up first
+    const k = s.t / s.dur, shot = SYS[s.s].shot, lift = Math.sin(k * Math.PI), len = Math.hypot(s.tx - s.sx, s.ty - s.sy) || 1;
+    const bend = s.curve ? lift * s.curve / len : 0; // missiles curve off the straight line and back
+    const x = s.sx + (s.tx - s.sx) * k - (s.ty - s.sy) * bend;
+    const y = s.sy + (s.ty - s.sy) * k + (s.tx - s.sx) * bend - lift * ({ lava: 28, capsule: 40, water: 22 }[shot] || 0); // lobbed shots arc up first
     if (shot === 'rocket') { blit(T.missile, x, y); parts.push({ x, y, vx: (Math.random() - .5) * 6, vy: (Math.random() - .5) * 6, life: .5, color: Math.random() < .5 ? C.pink : C.line }); }
     else if (shot === 'drone') blit(T.drone, x, y);
     else if (shot === 'rod') { const dx = (s.tx - s.sx) * .08, dy = (s.ty - s.sy) * .08; P.line(x - dx, y - dy, x, y, C.line); P.line(x - dx + 1, y - dy, x + 1, y, C.soft); } // streak
     else if (shot === 'rocks') { P.fill(x - 1, y - 1, 2, 2, '#b8a99a'); if (Math.random() < .5) parts.push({ x, y, vx: 0, vy: 0, life: .3, color: C.dim }); }
     else if (shot === 'lava') { P.fill(x - 1, y - 1, 3, 3, C.lava); P.dot(x, y, C.sun); parts.push({ x, y, vx: (Math.random() - .5) * 8, vy: 6, life: .6, color: Math.random() < .5 ? C.lava : C.sun }); }
+    else if (shot === 'swarm') { P.fill(x - 1, y - 1, 2, 2, C.line); parts.push({ x, y, vx: (Math.random() - .5) * 4, vy: (Math.random() - .5) * 4, life: .4, color: C.pink }); }
+    else if (shot === 'capsule') { P.fill(x - 2, y - 1, 5, 3, C.line); P.dot(x, y, C.pink); if (Math.random() < .5) parts.push({ x, y, vx: 0, vy: 0, life: .4, color: C.soft }); }
+    else if (shot === 'water') { P.fill(x - 1, y - 1, 3, 2, C.water); parts.push({ x, y, vx: (Math.random() - .5) * 6, vy: 10, life: .5, color: Math.random() < .5 ? C.water : C.line }); }
     else if (shot === 'gas') { // a puff that swells as it drifts
       const r = 2 + k * 5;
       ctx.globalAlpha = .7 - k * .3; P.ring(x, y, r, r * .8, 0, 2 * Math.PI, C.gas); P.ring(x + r * .6, y - 1, r * .6, r * .5, 0, 2 * Math.PI, C.gas); ctx.globalAlpha = 1;
@@ -989,6 +1055,12 @@ const SFX = {
   rocks: k => hiss({ dur: .18, vol: .07 * k, freq: 900, kind: 'bandpass', q: 4 }),
   lava: k => tone({ f: 140, f2: 420, dur: .35, vol: .05 * k, type: 'triangle' }),
   gas: k => hiss({ dur: .7, vol: .05 * k, freq: 700, f2: 300 }),
+  plasma: k => tone({ f: 260, f2: 900, dur: .3, vol: .05 * k, type: 'sawtooth', attack: .02 }),
+  ion: k => { tone({ f: 1800, f2: 220, dur: .4, vol: .05 * k, type: 'sine' }); hiss({ dur: .25, vol: .04 * k, freq: 4000, kind: 'highpass' }); },
+  swarm: k => arp([900, 1100, 1300], .05, { dur: .08, vol: .03 * k, type: 'square' }),
+  capsule: k => { tone({ f: 90, f2: 50, dur: .25, vol: .12 * k, type: 'sine' }); hiss({ dur: .4, vol: .05 * k, freq: 600, f2: 2400, kind: 'bandpass', q: 2 }); },
+  water: k => hiss({ dur: .5, vol: .06 * k, freq: 1200, f2: 400, kind: 'bandpass', q: 1.5 }),
+  flare: k => { tone({ f: 110, f2: 55, dur: .7, vol: .12 * k, type: 'sine' }); tone({ f: 880, f2: 1760, dur: .5, vol: .03 * k, type: 'triangle', attack: .1 }); },
   annihilate: k => { tone({ f: 70, f2: 28, dur: .9, vol: .2 * k, type: 'sine' }); hiss({ dur: .5, vol: .08 * k, freq: 3000, f2: 150 }); },
 };
 // Haptics: a short buzz on phones that support it, tied to the sound-effects toggle (no-op elsewhere).

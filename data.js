@@ -43,14 +43,38 @@ const CATALOG = {
   antimatter: { name: 'Antimatter Reactor', shot: 'annihilate', unit: 'physicist',
     ups: [['Physicist', '+1 physicist'], ['Magnetic Bottle', '+25% yield'], ['Annihilation Cascade', 'x1.08 reactor output']],
     desc: 'Annihilates matter with antimatter for raw terraforming power.', fact: 'CERN traps antihydrogen in magnetic bottles. One gram of antimatter meeting matter would release about 43 kilotons of energy.' },
+  // third generation, from world 3
+  lance: { name: 'Plasma Lance', shot: 'plasma', unit: 'cell',
+    ups: [['Charge Cell', '+1 cell'], ['Magnetic Lens', '+25% heat'], ['Overload Coils', 'x1.08 lance output']],
+    desc: 'Melts the frozen crust with a lance of white-hot plasma.', fact: 'Lightning is plasma: it heats the air to about 27,000 °C, roughly five times hotter than the surface of the Sun.' },
+  ion: { name: 'Ion Cannon', shot: 'ion', unit: 'thruster',
+    ups: [['Ion Thruster', '+1 thruster'], ['Xenon Tanks', '+25% thrust'], ['Beam Focus', 'x1.08 cannon output']],
+    desc: 'Beams charged particles down to split ice into air and water.', fact: 'NASA\'s Dawn probe ran on an ion engine, pushing out charged xenon, and used it to visit both Vesta and Ceres.' },
+  pod: { name: 'Seed Missile Pod', shot: 'swarm', unit: 'missile',
+    ups: [['Load Missile', '+1 missile'], ['Seed Warheads', '+25% seeds'], ['Smart Guidance', 'x1.08 pod output']],
+    desc: 'Fires volleys of seed missiles that burrow in and sprout.', fact: 'In 2018 two briefcase-sized CubeSats, MarCO-A and MarCO-B, flew all the way to Mars.' },
+  driver: { name: 'Mass Driver', shot: 'capsule', unit: 'magnet',
+    ups: [['Rail Magnet', '+1 magnet'], ['Heavy Capsules', '+25% cargo'], ['Superconducting Rails', 'x1.08 driver output']],
+    desc: 'Flings capsules of ice and soil onto the planet with magnets.', fact: 'A mass driver on the Moon could throw cargo into space with magnets alone, no rocket fuel needed.' },
+  hydro: { name: 'Hydro Cannon', shot: 'water', unit: 'pumper',
+    ups: [['Hire Pumper', '+1 pumper'], ['Wide Nozzles', '+25% water'], ['Pressure Boost', 'x1.08 cannon output']],
+    desc: 'Sprays melted ice across the land to fill the first rivers.', fact: 'Mars\' polar ice caps hold enough water to cover the whole planet in an ocean many metres deep if it all melted.' },
+  star: { name: 'Star Forge', shot: 'flare', unit: 'tech',
+    ups: [['Plasma Tech', '+1 tech'], ['Denser Fuel', '+25% fusion'], ['Stellar Core', 'x1.08 forge output']],
+    desc: 'A tiny captive star that bathes the whole world in warmth.', fact: 'In December 2022 a US laser lab got more energy out of a fusion reaction than its lasers put in, for the first time ever.' },
 };
-// Unlock slots 0-2 hang in orbit, 3-5 stand on the ground (see SLOT), so every loadout lists 3 orbital then 3 ground systems.
+// Unlock slots 0-2 hang in orbit, 3-5 stand on the ground (see SLOT). Each slot has three machines drawn for its spot:
+// 0 laser/striker/lance, 1 solar/coil/ion, 2 drone/asteroid/pod, 3 rocket/volcano/driver, 4 bio/forge/hydro, 5 core/antimatter/star.
 const TIER = [[100, 3], [1200, 20], [1.5e4, 140], [2e5, 1000], [2.5e6, 7000], [1.5e7, 40000]].map(([unlock, base]) => ({ unlock, base }));
-const LOADOUTS = [
-  ['laser', 'solar', 'drone', 'rocket', 'bio', 'core'],                 // world 1
-  ['striker', 'coil', 'asteroid', 'volcano', 'forge', 'antimatter'],    // world 2: all new
-  ['laser', 'coil', 'drone', 'volcano', 'bio', 'antimatter'],           // world 3: a mix of both
-  ['striker', 'solar', 'asteroid', 'rocket', 'forge', 'core'],          // world 4: the other mix, then the cycle repeats
+const LOADOUTS = [ // one per world, no two alike
+  ['laser', 'solar', 'drone', 'rocket', 'bio', 'core'],                 // CRIMSON: the originals
+  ['striker', 'coil', 'asteroid', 'volcano', 'forge', 'antimatter'],    // ARES: the second generation
+  ['lance', 'ion', 'pod', 'driver', 'hydro', 'star'],                   // KRYPTONITE: the third generation, all at once
+  ['laser', 'coil', 'pod', 'rocket', 'forge', 'star'],                  // GLASS STORM and on: mixes of all three
+  ['striker', 'ion', 'drone', 'driver', 'bio', 'antimatter'],
+  ['lance', 'solar', 'asteroid', 'volcano', 'hydro', 'core'],
+  ['laser', 'ion', 'asteroid', 'driver', 'forge', 'core'],
+  ['lance', 'coil', 'drone', 'volcano', 'hydro', 'antimatter'],
 ];
 let SYS;
 const setLoadout = w => { SYS = LOADOUTS[w % LOADOUTS.length].map((id, s) => ({ id, ...CATALOG[id], ...TIER[s] })); };

@@ -8,7 +8,7 @@ A pixel-art idle game: heal dead alien worlds with lasers, mirrors, drones, come
 
 ## How it plays
 
-- Tap the planet for Life, spend it on six systems per world, upgrade them and watch the surface turn from rock to oceans and forests. A moon, clouds and rings arrive at 25%, 50% and 75%.
+- Tap the planet for Life, spend it on six systems per world (18 machines in all, from lasers and comet launchers to a plasma lance, a mass driver and a captive star; no two worlds share a lineup), upgrade them and watch the surface turn from rock to oceans and forests. A moon, clouds and rings arrive at 25%, 50% and 75%.
 - Eight worlds, each with its own palette, a trait that changes the economy (orbital or ground systems, taps, goal rewards) and a different set of systems. Every healed world doubles all output for good, hands you a Star Seed for the 20-talent tree, and the goal grows x4, so later worlds are faster but never trivial. Each warp offers three boons (a head start, x3 taps, a shorter goal, more events...) for the next world. After the eighth, a short cinematic shows all eight worlds alive with your best times, and the cycle restarts.
 - Every few minutes at the screen something happens: a meteor shower (taps x5), a solar flare (every system fires double) or a golden comet to catch for a minute of income.
 - Systems refit as they level: Lv 10, 25 and 50 on any upgrade turn them Mark II, III and IV (cyan, gold, then white with a halo), on the planet and in the bar.
