@@ -99,15 +99,11 @@ const GOAL = 3e8, GOAL_GROWTH = 2, PRICE_GROWTH = 2, DIFFICULTY = 1.5, DIFFICULT
 const MAX_WORLD = 400;
 // Always one clear next step at the top, with a reward: [text, progress, target, reward, go].
 // go: the system a tap on the unfinished goal jumps to (-1 = back to the planet); a function picks it at tap time.
-const topSys = () => S.L.reduce((b, L, s) => (Math.max(...L) > Math.max(...S.L[b]) ? s : b), 0); // furthest-upgraded system
 const GOALS = [
   ['Tap the planet 10 times', () => S.taps, 10, 60, -1], // 10 taps (40) + 60 = exactly the first unlock
   [() => `Unlock the ${SYS[0].name}`, () => +S.on[0], 1, 50, 0],
-  [() => `Recruit 5 ${SYS[0].unit}s`, () => S.L[0][0], 5, 200, 0],
-  [() => `${SYS[0].ups[1][0]} to Lv 5`, () => S.L[0][1], 5, 1000, 0], // upgrade first: the next machine costs a lot more
   [() => `Unlock the ${SYS[1].name}`, () => +S.on[1], 1, 500, 1],
   ['Terraform 25%', () => pct(), 25, 3000, -1],
-  ['Get any upgrade to Lv 20', () => Math.max(...S.L.flat()), 20, 2e4, topSys],
   [() => `Unlock the ${SYS[2].name}`, () => +S.on[2], 1, 6000, 2],
   ['Terraform 50%', () => pct(), 50, 1e5, -1],
   [() => `Unlock the ${SYS[3].name}`, () => +S.on[3], 1, 5e4, 3],
@@ -115,7 +111,9 @@ const GOALS = [
   [() => `Unlock the ${SYS[4].name}`, () => +S.on[4], 1, 1e6, 4],
   [() => `Unlock the ${SYS[5].name}`, () => +S.on[5], 1, 2e7, 5],
   ['Terraform 100%', () => pct(), 100, 0, -1],
-].map(([text, get, need, reward, go]) => ({ text, get, need, reward, go }));
+].map(([text, get, need, reward, go]) => ({ text, get, need, reward, go })); // never asks for upgrades: unlock prices (UNLOCK_GATE) make those natural
+// Saves before goal list 2 count goals in the old 14-goal list (with three upgrade goals): old index -> first unclaimed goal here.
+const GOALS_V = 2, OLD_GOAL = [0, 1, 2, 2, 3, 3, 4, 5, 5, 5, 7, 7, 9, 10, 11];
 // Worlds in warp order (CRIMSON first). Each heals from `dead` tones into its own alien palette; dg/ag = dead/alive atmosphere glow.
 // music: this world's song (engine in game.js, musicStep). bpm; key: semitones from A; mode (MODES); meter: beats per bar (3 or 4);
 // swing (0..0.33); bright: the music filter cutoff in Hz; prog: chord roots as scale degrees, section A then B (4 bars each);

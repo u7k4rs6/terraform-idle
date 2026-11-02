@@ -1868,7 +1868,7 @@ function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       t: hiddenAt || Date.now(), played: Math.max(0, last - S.start), // hidden tab: the loop stopped when it was hidden, so count from then
-      S: saveFields(),
+      S: saveFields(), gv: GOALS_V,
       items: items.slice(-150).map(it => [Math.round(it.u), Math.round(it.v)]),
     }));
   } catch { /* private mode or full storage: keep playing unsaved */ }
@@ -1888,7 +1888,7 @@ const optional = (v, ok) => v === undefined || ok(v); // fields that older saves
 const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
   && ['life', 'earned'].every(k => Number.isFinite(d.S[k]) && d.S[k] >= 0 && d.S[k] < 1e300) // room for 24h of income on the last allowed world
   && ['taps', 'goal', 'world'].every(k => Number.isInteger(d.S[k]) && d.S[k] >= 0)
-  && d.S.goal <= GOALS.length && d.S.world <= MAX_WORLD // warp() never goes past it, so every reachable save loads
+  && d.S.goal <= (d.gv === GOALS_V ? GOALS.length : OLD_GOAL.length - 1) && d.S.world <= MAX_WORLD // warp() never goes past it, so every reachable save loads
   && Array.isArray(d.S.on) && d.S.on.length === SYS.length && d.S.on.every((on, s) => typeof on === 'boolean' && (!on || s === 0 || d.S.on[s - 1])) // unlocked in order
   && Array.isArray(d.S.L) && d.S.L.length === SYS.length && d.S.L.every((l, s) => Array.isArray(l) && l.length === 3 && l.every(n => Number.isInteger(n) && n >= 0 && n <= MAXL) && (d.S.on[s] || l.every(n => !n)))
   && optional(d.S.intro, v => typeof v === 'boolean') && optional(d.S.done, v => typeof v === 'boolean')
@@ -1916,6 +1916,7 @@ function load() {
   }
   const v = d.S, prev = S.world;
   Object.assign(S, fromSave(v, d.played));
+  if (d.gv !== GOALS_V) S.goal = OLD_GOAL[S.goal]; // the goal list changed: same progress, new numbering
   const was = SYS.map(sy => sy.id).join();
   setLoadout(S.world);
   if (W && SYS.map(sy => sy.id).join() !== was) resize(); // another tab warped meanwhile
@@ -2047,7 +2048,7 @@ let conNext = 60; // seconds of play until the next offer
 const CONTRACT_KINDS = { // pick() returns { arg, from?, secs } or null when the kind does not fit the moment
   // unlock: only offered when the next machine is affordable within the time
   unlock: { pick: () => { const s = S.on.indexOf(false); return s > 0 && unlocked(s) && S.life + rateOf(false) * 120 >= unlockCost(s) ? { arg: s, secs: 180 } : null; }, text: c => `Unlock the ${SYS[c.arg].name}`, done: c => S.on[c.arg] },
-  level: { pick: () => { const top = Math.max(...S.L.flat()); return top < MAXL ? { arg: Math.min(MAXL, top + 5), secs: 120 } : null; },
+  level: { pick: () => null, // retired (upgrades should come naturally); kept so a saved one still loads and finishes
     text: c => `Get any upgrade to Lv ${c.arg}`, done: c => Math.max(...S.L.flat()) >= c.arg },
   combo: { pick: () => ({ arg: 15, secs: 60 }), text: c => `Chain a ${c.arg}-tap combo`, done: c => combo >= c.arg },
   earn: { pick: () => ({ arg: Math.max(500 * priceScale(), rateOf() * 130), from: S.earned, secs: 90 }), text: c => `Earn ${fmt(c.arg)} life`, done: c => S.earned - c.from >= c.arg },
