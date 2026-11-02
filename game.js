@@ -269,7 +269,7 @@ const ART = {
     r.poly([[14, 5], [19, 8], [12, 5]]); // tail fin
     r.rect(8, -6, 10, 12); // breech
     r.rect(10, -9, 6, 3); for (const x of [11, 13, 15]) r.seg(x, -8, x, -7, C.dim); // rod magazine
-    r.seg(-22, -3, 8, -3); r.seg(-22, 3, 8, 3); // twin rails
+    r.rect(-22, -3, 30, 6); r.seg(-21, 0, 7, 0, C.dim); // twin rails on a solid body
     for (const x of [-18, -12, -6, 0]) r.rect(x, -4, 2, 8, C.pink); // magnetic coils
     r.seg(-24, -3, -24, 3); r.dot(-26, 0, C.line); // muzzle ring, rod tip
     r.seg(18, -2, 21, -2); r.seg(18, 2, 21, 2); // thrusters
@@ -278,6 +278,7 @@ const ART = {
   coil: art(48, 40, p => {
     p.line(14, 30, 6, 30); p.line(34, 30, 42, 30); p.disc(4, 30, 2); p.disc(44, 30, 2); // arms and side orbs
     p.box(15, 26, 18, 8); p.line(17, 29, 30, 29, C.dim); p.fill(19, 31, 10, 1, C.pink); // base
+    p.poly([[15, 25], [33, 25], [29, 13], [19, 13]]); // solid cone behind the windings
     p.line(24, 8, 24, 26, C.dim); // coil core
     for (const [y, rx] of [[23, 9], [19, 7], [15, 5]]) p.ring(24, y, rx, 2); // windings
     p.disc(24, 7, 5); p.disc(24, 7, 2, C.pink); // charged sphere
@@ -735,7 +736,7 @@ function drawLife(t, heal) {
 }
 let moonAt = null, moonI = 0, moonReady = 0;
 function drawMoon(x, y, k) { // k: 0..1 while it grows in
-  const r = Math.max(1, Math.round(R * .12 * k));
+  const r = Math.max(1, Math.round(R * .14 * k));
   const sh = Math.round(r * .3); // shadow side starts this far right of centre
   for (let dy = -r; dy <= r; dy++) {
     const dx = Math.round(Math.sqrt(r * r - dy * dy));
@@ -777,19 +778,30 @@ function drawColony(t, heal) {
 
 // Atmosphere ring in clean solid bands (white rim, then three fading steps). Built at the full planet size (R0) and
 // rebuilt only when that size or the colour changes; the warp zoom just scales it.
-let haloCv, haloKey;
+// The shape (band alphas + white rim) is built once per size; a colour change only re-tints it: building it per colour
+// cost up to 20 ms a time and stuttered the spin as the atmosphere shifted while healing.
+let haloShape, haloShapeR, haloKey;
+const haloCv = mk(1, 1);
 function haloRing(rgb) {
   const r = Math.round(R0), key = r + '|' + rgb;
   if (key === haloKey) return haloCv;
-  const s = (Math.ceil(r * 1.32) + 1) * 2, m = s / 2, c = mk(s, s), g = c.getContext('2d');
-  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
-    const t = (Math.hypot(x - m + .5, y - m + .5) - r) / (r * .3);
-    if (t < 0 || t > 1) continue;
-    g.fillStyle = t < .07 ? C.line : `rgba(${rgb},${t < .3 ? .6 : t < .6 ? .32 : .14})`;
-    g.fillRect(x, y, 1, 1);
+  if (haloShapeR !== r) {
+    const s = (Math.ceil(r * 1.32) + 1) * 2, m = s / 2, band = mk(s, s), rim = mk(s, s);
+    const bi = band.getContext('2d').createImageData(s, s), ri = rim.getContext('2d').createImageData(s, s);
+    for (let y = 0, i = 3; y < s; y++) for (let x = 0; x < s; x++, i += 4) {
+      const t = (Math.hypot(x - m + .5, y - m + .5) - r) / (r * .3);
+      if (t < 0 || t > 1) continue;
+      if (t < .07) ri.data.fill(255, i - 3, i + 1); else bi.data[i] = 255 * (t < .3 ? .6 : t < .6 ? .32 : .14);
+    }
+    band.getContext('2d').putImageData(bi, 0, 0); rim.getContext('2d').putImageData(ri, 0, 0);
+    haloShape = [band, rim]; haloShapeR = r;
   }
+  const [band, rim] = haloShape, g = haloCv.getContext('2d');
+  haloCv.width = band.width; haloCv.height = band.height; // also clears it
+  g.drawImage(band, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = `rgb(${rgb})`; g.fillRect(0, 0, band.width, band.height);
+  g.globalCompositeOperation = 'source-over'; g.drawImage(rim, 0, 0);
   haloKey = key;
-  return haloCv = c;
+  return haloCv;
 }
 
 const canAct = s => S.on[s] ? S.L[s].some((l, k) => l < MAXL && S.life >= price(s, k)) : unlocked(s) && S.life >= unlockCost(s);
@@ -827,11 +839,12 @@ function draw(t, heal) {
   ctx.drawImage(halo, Math.round(CX - hs / 2), Math.round(CY - hs / 2), hs, hs);
 
   ridge.forEach((h, x) => { P.fill(x, GY - h, 1, h, C.deep); P.dot(x, GY - h, C.dim); }); // dark mountains, behind the planet
-  const ma = t * .2, moon = [Math.round(CX + Math.cos(ma) * R * 1.2), Math.round(CY + Math.sin(ma) * R * .36 - Math.cos(ma) * R * .1)], front = Math.sin(ma) > 0;
+  // moon: a tilted orbit whose near side crosses the planet's upper face (well above the colony), far side behind its top
+  const ma = t * .2, moon = [Math.round(CX + Math.cos(ma) * R * 1.2), Math.round(CY - R * .5 + Math.sin(ma) * R * .25 - Math.cos(ma) * R * .1)], front = Math.sin(ma) > 0;
   // milestones ease in over a few % of healing instead of popping: moon at 25%, clouds at 50%, rings at 75%
   const ramp = at => Math.max(0, Math.min(1, (heal - at) / .03)), mo = ramp(.25), ck = ramp(.5), rk = ramp(.75), rr = R * (1.1 + .28 * rk);
   if (rk) P.ring(CX, CY, rr, rr * .145, Math.PI, 2 * Math.PI);
-  moonAt = mo ? { x: moon[0], y: moon[1], r: Math.max(1, Math.round(R * .12 * mo)), front } : null; // for taps
+  moonAt = mo ? { x: moon[0], y: moon[1], r: Math.max(1, Math.round(R * .14 * mo)), front } : null; // for taps
   if (mo && !front) drawMoon(...moon, mo);
   compose(t, heal);
   globe(comp, off);
@@ -1790,7 +1803,7 @@ cv.addEventListener('pointerdown', e => {
   // the moon comes after the systems (a passing moon never steals their taps); behind the planet only its visible part counts
   if (moonAt && Math.hypot(x - moonAt.x, y - moonAt.y) <= moonAt.r + 3 && (moonAt.front || (x - CX) ** 2 + (y - CY) ** 2 > R * R)) return tapMoon();
   if (sel >= 0) return closePanel(); // panel open: a tap on the planet, the ground or empty sky just closes it (objects above still act)
-  if (y >= GY) return; // the ground is solid
+  if (y >= GY || city.slice(0, cityN).some(b => x >= b.x && x < b.x + b.w && y >= GY - b.h - 5)) return; // the ground and the colony are solid
   if ((x - CX) ** 2 + (y - CY) ** 2 > R * R) return;
   tapPlanet(x, y);
 });
