@@ -1029,14 +1029,14 @@ function musicStep(s, t) {
   if (so.swing && beat % 4 === 2) t += so.swing * 2 * len; // swing: the off-beat 8th comes late
   const o = { t, bus: musicBus }, root = so.prog[B][bar & 3], ch = [0, 2, 4, 7, 9].map(i => deg(m, root + i)); // root, 3rd, 5th, octave, 10th
   if (so.pad && beat === 0) for (const n of ch.slice(0, 3)) for (const dt of so.chorus ? [-9, 9] : [0]) // pad (detuned pairs: a chorus)
-    tone({ ...o, f: mtof(n), type: so.pad, dur: len * bs, vol: (loud(so.pad) ? .012 : .028) / (so.chorus ? 1.6 : 1), attack: .5, release: .8, detune: dt, echo: so.echo });
+    tone({ ...o, f: mtof(n), type: so.pad, dur: len * bs, vol: so.padVol ?? (loud(so.pad) ? .012 : .028) / (so.chorus ? 1.6 : 1), attack: .6, release: .8, detune: dt, echo: so.echo });
   const b = so.bass[beat];
   if (b !== '.') { // bass: x root, o octave, 5 fifth; a note lasts until the next one
     const next = so.bass.slice(beat + 1).search(/[^.]/), span = next < 0 ? bs - beat : next + 1;
-    tone({ ...o, f: mtof((b === '5' ? ch[2] : ch[0]) - 24 + (b === 'o' ? 12 : 0)), type: so.bassWave, dur: len * span * .9, vol: loud(so.bassWave) ? .05 : .11, release: .05 });
+    tone({ ...o, f: mtof((b === '5' ? ch[2] : ch[0]) - 24 + (b === 'o' ? 12 : 0)), type: so.bassWave, dur: len * span * .9, vol: loud(so.bassWave) ? .05 : .11, release: so.bassRelease ?? .05 });
   }
   const A = so.arp;
-  if (A && beat % A.rate === 0) { const i = A.pat[beat / A.rate % A.pat.length]; if (i >= 0) tone({ ...o, f: mtof(ch[i] + 12 * A.oct), type: A.wave, dur: len * A.len, vol: loud(A.wave) ? .014 : .03, echo: A.echo }); }
+  if (A && beat % A.rate === 0) { const i = A.pat[beat / A.rate % A.pat.length]; if (i >= 0) tone({ ...o, f: mtof(ch[i] + 12 * A.oct), type: A.wave, dur: len * A.len, vol: A.vol ?? (loud(A.wave) ? .014 : .03), echo: A.echo }); }
   const n = motif(S.world % WORLDS.length)[beat >> 1];
   if (heal >= so.leadAt && beat % 2 === 0 && n >= 0 && !(bar & 1 && beat >= bs / 2)) // melody, answering itself: odd bars play only their first half
     tone({ ...o, f: mtof(deg(m, root + n + 7 + 2 * B)), type: so.lead, dur: len * 1.7, vol: loud(so.lead) ? .014 : .028, echo: so.echo });
@@ -1045,7 +1045,9 @@ function musicStep(s, t) {
     if (so.drums.s?.[beat] === 'x') hiss({ ...o, dur: .14, vol: .05, freq: 1800, kind: 'bandpass', q: .8 });
     if (so.drums.h?.[beat] === 'x') hiss({ ...o, dur: .04, vol: .03, freq: 3500, kind: 'highpass' });
   }
-  if (beat === 10 % bs && Math.random() < .15 + .45 * heal) tone({ ...o, f: mtof(deg(m, root + [7, 9, 11, 14][Math.random() * 4 | 0]) + 12), type: 'sine', dur: len * 10, vol: .024, attack: .05, release: .8, echo: true }); // sparkle
+  const sp = so.sparkle; // high sparkle notes: the song's own set (absolute notes, plus the key) or chord tones, more often as it heals
+  if (beat === 10 % bs && Math.random() < (sp ? sp.p : .15 + .45 * heal))
+    tone({ ...o, f: mtof(sp ? sp.notes[Math.random() * sp.notes.length | 0] + 12 + key : deg(m, root + [7, 9, 11, 14][Math.random() * 4 | 0]) + 12), type: 'sine', dur: len * 10, vol: sp ? .03 : .024, attack: .05, release: .8, echo: !sp });
 }
 
 // ---------- achievements: lifetime trophies, listed in the settings sheet ----------

@@ -87,14 +87,15 @@ const GOALS = [
 // Worlds in warp order (CRIMSON first). Each heals from `dead` tones into its own alien palette; dg/ag = dead/alive atmosphere glow.
 // music: this world's song (engine in game.js, musicStep). bpm; key: semitones from A; mode (MODES); meter: beats per bar (3 or 4);
 // swing (0..0.33); bright: the music filter cutoff in Hz; prog: chord roots as scale degrees, section A then B (4 bars each);
-// pad / bassWave / lead: oscillator types (pad null: none; chorus: detuned pairs; echo: on pad and melody); bass: one bar,
+// pad / bassWave / lead: oscillator types (pad null: none; padVol; chorus: detuned pairs; echo: on pad and melody); bass: one bar,
 // x root, o octave, 5 fifth, . hold; arp: { pat: chord tones (-1 rest), rate in 16ths, oct, len in 16ths, wave, echo };
-// drums: one bar per instrument (k kick, s snare, h hat); leadAt / drumsAt: how healed before the melody / drums join.
+// drums: one bar per instrument (k kick, s snare, h hat); leadAt / drumsAt: how healed before the melody / drums join (above 1: never);
+// sparkle: { p: chance per bar, notes } to use a fixed set of high notes instead of chord tones.
 // trait: what this world changes while you are on it (orbit/ground multiply those systems, tap multiplies taps, reward the goal rewards).
 const WORLDS = [
-  { name: 'CRIMSON', music: { style: 'music-box waltz', bpm: 92, key: 0, mode: 'harmonic', meter: 3, bright: 3200, prog: [[0, 5, 3, 4], [0, 3, 5, 4]],
-    pad: 'triangle', bassWave: 'triangle', bass: 'x...5...5...', lead: 'sine', echo: true, leadAt: .25,
-    arp: { pat: [3, 2, 1, 2, 4, 2], rate: 2, oct: 1, len: 1.2, wave: 'sine', echo: true }, drums: { k: 'x...........', h: '....x...x...' }, drumsAt: .5 },
+  { name: 'CRIMSON', music: { style: 'the original theme', bpm: 80, key: 0, mode: 'minor', bright: 2400, prog: [[0, -2, -5, -1], [0, -2, -5, -1]], // Am F C G, as at launch
+    pad: 'triangle', padVol: .035, bassWave: 'triangle', bass: 'x.......x.......', bassRelease: .4, lead: 'triangle', leadAt: 2, // no melody
+    arp: { pat: [0, 1, 2, 1, 0, 2, 1, 2], rate: 2, oct: 1, len: 1.8, wave: 'square', vol: .018 }, drums: null, sparkle: { p: .4, notes: [69, 72, 74, 76, 79, 81] } },
     sea: ['#4a0d26', '#6e1636'], coast: '#ffb36b', land: ['#d6204f', '#ff5c7a'], caps: '#ffe0e6',
     dead: [[40, 38, 44], [66, 62, 70], [98, 92, 98], [140, 132, 136]], crater: '#24222a', dg: [160, 150, 170], ag: [255, 110, 140],
     fact: 'Plants on worlds around dim red stars might grow red or even black to soak up every bit of light.' },
@@ -105,9 +106,9 @@ const WORLDS = [
     dead: [[74, 32, 34], [112, 46, 38], [158, 72, 46], [206, 120, 74]], crater: '#4a2022', dg: [233, 138, 163], ag: [154, 166, 224],
     trait: { orbit: 1.5, text: 'Low gravity: orbital systems x1.5' },
     fact: 'Some scientists think early life on Earth was purple, using a pigment called retinal instead of chlorophyll.' },
-  { name: 'KRYPTONITE', music: { style: 'techno', bpm: 126, key: -3, mode: 'phrygian', bright: 6500, prog: [[0, 0, 1, 0], [0, 6, 1, 0]],
-    pad: null, bassWave: 'sawtooth', bass: '..x...x...x...x.', lead: 'sawtooth', leadAt: .25,
-    arp: { pat: [0, 2, 3, 4, 3, 2, 1, 2], rate: 1, oct: 1, len: .8, wave: 'sawtooth' }, drums: { k: 'x...x...x...x...', h: '..x...x...x...x.' }, drumsAt: 0 },
+  { name: 'KRYPTONITE', music: { style: 'crystal music-box waltz', bpm: 92, key: -3, mode: 'harmonic', meter: 3, bright: 3200, prog: [[0, 5, 3, 4], [0, 3, 5, 4]],
+    pad: 'triangle', bassWave: 'triangle', bass: 'x...5...5...', lead: 'sine', echo: true, leadAt: .25,
+    arp: { pat: [3, 2, 1, 2, 4, 2], rate: 2, oct: 1, len: 1.2, wave: 'sine', echo: true }, drums: { k: 'x...........', h: '....x...x...' }, drumsAt: .5 },
     sea: ['#0b3d2a', '#0f5c3a'], coast: '#d8ff6b', land: ['#39ff6a', '#a6ff3d'], caps: '#eaffd8',
     dead: [[18, 16, 28], [34, 28, 48], [56, 44, 74], [88, 70, 110]], crater: '#0c0a14', dg: [140, 110, 190], ag: [120, 240, 150],
     trait: { tap: 3, text: 'Charged crust: taps x3' },
