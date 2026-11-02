@@ -928,7 +928,7 @@ function audioOn() {
   const comp = AC.createDynamicsCompressor(); // keeps stacked shots from clipping
   comp.connect(AC.destination);
   sfxBus = AC.createGain(); sfxBus.connect(comp);
-  const warm = AC.createBiquadFilter(); warm.type = 'lowpass'; warm.frequency.value = 2400; warm.connect(comp);
+  const warm = AC.createBiquadFilter(); warm.type = 'lowpass'; warm.frequency.value = 5000; // soft top end that still lets the hi-hats through warm.connect(comp);
   musicBus = AC.createGain(); musicBus.connect(warm);
   setBuses();
   noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
@@ -951,12 +951,13 @@ function tone({ f, f2, type = 'square', dur = .1, vol = .1, at = 0, t, attack = 
   o.connect(g).connect(bus); o.start(t); o.stop(t + dur + .05);
 }
 // Filtered noise burst (whooshes, crackles, booms); freq slides to f2.
-function hiss({ dur = .2, vol = .1, at = 0, freq = 1000, f2, kind = 'lowpass', q = 1 }) {
-  const t = AC.currentTime + at, src = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain();
+function hiss({ dur = .2, vol = .1, at = 0, t, freq = 1000, f2, kind = 'lowpass', q = 1, bus = sfxBus }) {
+  t ??= AC.currentTime + at;
+  const src = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain();
   src.buffer = noiseBuf; fl.type = kind; fl.Q.value = q; fl.frequency.setValueAtTime(freq, t);
   if (f2) fl.frequency.exponentialRampToValueAtTime(f2, t + dur);
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-  src.connect(fl).connect(g).connect(sfxBus); src.start(t); src.stop(t + dur + .05);
+  src.connect(fl).connect(g).connect(bus); src.start(t); src.stop(t + dur + .05);
 }
 const arp = (fs, gap, o) => fs.forEach((f, i) => tone({ ...o, f, at: i * gap }));
 // k scales the volume: purchases and taps play full, automatic shots quietly so constant fire stays in the background
@@ -997,28 +998,43 @@ function play(name, k = 1) {
   SFX[name](k);
 }
 
-// Background music: a slow spacey loop (Am F C G in A minor, shifted per world), 16th-note grid, scheduled a little ahead of the clock.
-// Each world sets its own tempo and key (WORLDS[].music); a change lands on the next chord, so a warp never cuts a note short.
-const mood = () => world().music || [80, 0], STEP = () => 60 / mood()[0] / 4, mtof = m => 440 * 2 ** ((m - 69) / 12);
-const CHORDS = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]], SPARK = [69, 72, 74, 76, 79, 81];
-let mStep = 0, mNext = 0;
+// Background music: each world's own song (WORLDS[].music: tempo, key, mode, two 4-bar progressions, arpeggio, lead, groove) on a
+// 16th-note grid, scheduled a little ahead of the clock. It grows as the planet heals: pads, bass and arpeggio from the start,
+// the melody at 25%, drums at 50%, sparkles more often towards 100%.
+const MODES = { minor: [0, 2, 3, 5, 7, 8, 10], harmonic: [0, 2, 3, 5, 7, 8, 11], dorian: [0, 2, 3, 5, 7, 9, 10], phrygian: [0, 1, 3, 5, 7, 8, 10],
+  lydian: [0, 2, 4, 6, 7, 9, 11], major: [0, 2, 4, 5, 7, 9, 11], mixolydian: [0, 2, 4, 5, 7, 9, 10] };
+const ARPS = [[0, 1, 2, 1, 0, 2, 1, 2], [0, 2, 4, 2, 1, 3, 4, 3], [0, 0, 2, 1, 0, 0, 3, 2], [0, -1, 2, -1, 4, -1, 2, -1]]; // chord tones per 8th; -1 rests
+const GROOVES = ['k...h...k...h...', 'k.h.s.h.k.h.s.h.', 'k.h...h.s.h...h.']; // per 16th: kick, snare, hat
+const song = () => world().music, STEP = () => 60 / song().bpm / 4, mtof = m => 440 * 2 ** ((m - 69) / 12);
+const deg = (m, d) => 57 + key + m[(d % 7 + 7) % 7] + 12 * Math.floor(d / 7); // scale degree d of mode m, from A3 + key
+let mStep = 0, mNext = 0, key = 0;
 function startMusic() {
   mNext = AC.currentTime + .2;
   setInterval(() => {
     if (AC.state !== 'running' || !pref.music) return; // muted: schedule nothing
     if (mNext < AC.currentTime) mNext = AC.currentTime + .05; // resumed after a pause or unmuted: don't play the backlog
-    while (mNext < AC.currentTime + .35) { musicStep(mStep, mNext); mStep = (mStep + 1) % 64; mNext += STEP(); }
+    while (mNext < AC.currentTime + .35) { musicStep(mStep, mNext); mStep = (mStep + 1) % 128; mNext += STEP(); } // 8 bars: A then B
   }, 100);
 }
-let key = 0; // the key in use, switched only at a chord change
+// The melody: 8 notes per bar (scale steps above the chord root, -1 rests), different for every world, a third higher in section B.
+const motif = w => Array.from({ length: 8 }, (_, i) => (hash(i, w, 71) < .3 && i ? -1 : [0, 1, 2, 4, 5, 7][hash(i, w, 72) * 6 | 0]));
+console.assert(deg(MODES.minor, 0) === 57 && deg(MODES.minor, 7) === 69 && deg(MODES.minor, -1) === 55, 'music: scale degrees');
 function musicStep(s, t) {
-  const beat = s & 15, m = { t, bus: musicBus }, len = STEP(); // one 16th note at this world's tempo
-  if (beat === 0) key = mood()[1];
-  const ch = CHORDS[s >> 4].map(n => n + key);
-  if (beat === 0) ch.forEach(n => tone({ ...m, f: mtof(n), type: 'triangle', dur: len * 16, vol: .035, attack: .6, release: 1 })); // pad
-  if (beat % 8 === 0) tone({ ...m, f: mtof(ch[0] - 24), type: 'triangle', dur: len * 7, vol: .11, attack: .01, release: .4 }); // bass
-  if (beat % 2 === 0) tone({ ...m, f: mtof(ch[[0, 1, 2, 1, 0, 2, 1, 2][beat >> 1]] + 12), type: 'square', dur: len * 1.8, vol: .018 }); // arpeggio
-  if (beat === 10 && Math.random() < .4) tone({ ...m, f: mtof(SPARK[Math.random() * SPARK.length | 0] + 12 + key), type: 'sine', dur: len * 10, vol: .03, attack: .05, release: .8 }); // sparkle
+  const so = song(), m = MODES[so.mode], beat = s & 15, bar = s >> 4, B = bar >> 2, len = STEP(), o = { t, bus: musicBus }, heal = healOf(S.earned);
+  if (s === 0) key = so.key; // a new key starts with the song
+  const root = so.prog[B][bar & 3], ch = [0, 2, 4, 7, 9].map(i => deg(m, root + i)); // root, 3rd, 5th, octave, 10th
+  if (beat === 0) ch.slice(0, 3).forEach(n => tone({ ...o, f: mtof(n), type: 'triangle', dur: len * 16, vol: .03, attack: .6, release: 1 })); // pad
+  if (beat % 8 === 0) tone({ ...o, f: mtof(ch[0] - 24), type: 'triangle', dur: len * 7, vol: .11, attack: .01, release: .4 }); // bass
+  const a = ARPS[so.arp][beat >> 1];
+  if (beat % 2 === 0 && a >= 0) tone({ ...o, f: mtof(ch[a] + 12), type: 'square', dur: len * 1.8, vol: .016 }); // arpeggio
+  const n = motif(S.world % WORLDS.length)[beat >> 1];
+  if (heal >= .25 && beat % 2 === 0 && n >= 0 && !(bar & 1 && beat >= 8)) // melody, answering itself: odd bars play only their first half
+    tone({ ...o, f: mtof(deg(m, root + n + 7 + 2 * B)), type: so.lead, dur: len * 1.7, vol: so.lead === 'sawtooth' || so.lead === 'square' ? .014 : .028, attack: .01 });
+  const d = GROOVES[so.drums][beat];
+  if (heal >= .5 && d === 'k') tone({ ...o, f: 120, f2: 40, type: 'sine', dur: .2, vol: .14 });
+  if (heal >= .5 && d === 's') hiss({ ...o, dur: .14, vol: .05, freq: 1800, kind: 'bandpass', q: .8 });
+  if (heal >= .5 && d === 'h') hiss({ ...o, dur: .04, vol: .03, freq: 3500, kind: 'highpass' });
+  if (beat === 10 && Math.random() < .25 + .45 * heal) tone({ ...o, f: mtof(deg(m, root + [7, 9, 11, 14][Math.random() * 4 | 0]) + 12), type: 'sine', dur: len * 10, vol: .028, attack: .05, release: .8 }); // sparkle
 }
 
 // ---------- achievements: lifetime trophies, listed in the settings sheet ----------
@@ -1469,7 +1485,7 @@ function warp(boon = '') {
   setLoadout(S.world); resize(); // ground systems change size: re-fit the colony around them
   const fresh = SYS.filter(sy => !before.includes(sy.id)).map(sy => sy.name);
   items.length = shots.length = 0;
-  conNext = 60; meteors.length = 0; if (ev) endEvent(); // a fresh world: fresh job board, the sky's event stays behind
+  conNext = 60; meteors.length = 0; mStep = 0; if (ev) endEvent(); // the new world's song starts from the top // a fresh world: fresh job board, the sky's event stays behind
   if (boon === 'storm') evNext = Math.min(evNext, 40); // after endEvent(), which would reset it
   stage = 0; zoom = .3; flash = 1; shake = 1; // arrive from far away
   buildWorld();
