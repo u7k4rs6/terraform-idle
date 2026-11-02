@@ -1339,14 +1339,14 @@ talTile.innerHTML = `<img src="${src(TI.sprout)}" alt="">`;
 talTile.addEventListener('click', openTalents);
 $('bar').append(talTile);
 
-let toastTimer;
-const toasts = []; // queued while the panel hides them on phones; shown one after another on close
+let toastTimer, toastAt = -1e9;
+const toasts = []; // waiting their turn: hidden under the panel on phones, or behind a toast that only just appeared
 function toast(msg, big) {
-  if (sel >= 0 && innerWidth < 900) { toasts.push([msg, big]); return; }
-  const el = $('toast');
-  el.textContent = msg; el.classList.add('show'); el.classList.toggle('big', !!big);
+  const el = $('toast'), fresh = el.classList.contains('show') && performance.now() - toastAt < 2500;
+  if ((sel >= 0 && innerWidth < 900) || fresh) { if (toasts.length < 4) toasts.push([msg, big]); return; }
+  el.textContent = msg; el.classList.add('show'); el.classList.toggle('big', !!big); toastAt = performance.now();
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.classList.remove('show'); if (toasts.length) toast(...toasts.shift()); }, 6000);
+  toastTimer = setTimeout(() => { el.classList.remove('show'); if (toasts.length) toast(...toasts.shift()); }, toasts.length ? 3500 : 6000); // shorter when others wait
 }
 
 $('goal').addEventListener('click', () => {
