@@ -23,14 +23,24 @@ const fmt = n => {
   while (n >= 999.5 && k < 4) { n /= 1000; k++; } // 999.5 not 1000: values that round up move to the next unit
   return n.toFixed(n < 9.995 ? 2 : n < 99.95 ? 1 : 0) + 'kmbtq'[k];
 };
-console.assert(fmt(999999) === '1.00m' && fmt(9999) === '10.0k' && fmt(1500) === '1.50k' && fmt(12.7) === '12' && fmt(2e15) === '2.00q' && fmt(6.64e44) === '6.64e44' && fmt(9.999e20) === '1.00e21' && fmt(5e17) === '500q' && fmt(1e18) === '1.00e18', 'fmt rounding');
+console.assert([[999999, '1.00m'], [9999, '10.0k'], [1500, '1.50k'], [12.7, '12'], [2e15, '2.00q'], [5e17, '500q'], [1e18, '1.00e18'], [9.999e20, '1.00e21'], [6.64e44, '6.64e44']]
+  .every(([n, s]) => fmt(n) === s), 'fmt rounding');
 const mmss = s => `${Math.floor(s / 60)}m ${s % 60}s`;
 const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][n] ?? n;
 
 // seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done;
 // done: this world is at 100% (the warp is waiting); best: fastest time to heal each world, by name
 // ach: achievement ids earned; n: lifetime counters the achievements watch (crits, comets caught, taps in meteor showers, longest time away in s)
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0 }, daily: '', boon: '', offer: [], contract: null, auto: SYS.map(() => false) }; // auto: per slot, buy the cheapest upgrade by itself // boon: the warp boon on this world; offer: the 3 boons the waiting warp offers; contract: the open side job (data only) // daily: local date of the last supply drop opened
+const N0 = { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0 }; // lifetime counters (away: longest absence, s)
+const S = {
+  life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]),
+  seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { ...N0 },
+  daily: '', // local date of the last supply drop opened
+  boon: '', offer: [], // the warp boon on this world; the 3 boons a waiting warp offers
+  contract: null, // the open side job, as data
+  auto: SYS.map(() => false), // per slot: buy the cheapest upgrade by itself
+};
+const earn = g => { S.life += g; S.earned += g; };
 console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
 console.assert(ucost(0, 0, 0) === 25 && ucost(0, 0, 1) === 31 && ucost(0, 2, 0) === 250, 'upgrade cost'); // world 0: price scale 1
 const has = id => S.tal.includes(id);
@@ -42,6 +52,7 @@ const PAIR = { lens: [0, 1], swarm: [2, 3], grow: [4, 5] };
 const sysOut = (s, live = true) => sysRate(s, S.L[s]) * boost() * allMul() * ((SLOT[s].ground ? trait().ground : trait().orbit) || 1) * (live && ev?.id === 'flare' ? 2 : 1) * (S.boon === 'summer' ? 1.5 : 1)
   * Object.entries(PAIR).reduce((m, [id, ss]) => (has(id) && ss.includes(s) ? m * 2 : m), 1);
 const rateOf = (live = true) => SYS.reduce((a, _, s) => a + (S.on[s] ? sysOut(s, live) : 0), 0);
+const pay = (secs, min) => Math.max(min * priceScale(), rateOf(false) * secs); // one-off rewards: secs of base income, at least min (scaled)
 const tapGain = () => (tapOf(rateOf()) * (has('spark') ? 3 : 1) + (has('tapecho') ? rateOf() : 0)) * (trait().tap || 1) * (S.boon === 'hands' ? 3 : 1); // one tap, before a crit
 const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (has('thrift') ? .9 : 1) * (S.boon === 'bulk' ? .8 : 1)); // level l -> l+1 of upgrade k
 const unlockCost = s => Math.ceil(SYS[s].unlock * priceScale() * (has('cheap') ? .75 : 1));
@@ -159,9 +170,8 @@ function shadow(src, dotted) {
 function grit(src, seed, light) {
   const w = src.width, h = src.height, g = src.getContext('2d', { willReadFrequently: true }), im = g.getImageData(0, 0, w, h), d = im.data;
   const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 0;
-  const hex = s => [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16));
-  const T = { lineL: hex('#dfe3f0'), lineM: hex('#aab2d0'), lineD: hex('#6d769c'), detA: hex('#525a7a'), detB: hex('#646c8e'),
-    fillL: hex('#454c6c'), fillM: hex('#343a56'), fillD: hex('#262a40'), fillX: hex('#1b1e2e'), pinkL: hex('#f0a3b7'), pinkD: hex('#a8566f') };
+  const T = { lineL: rgb('#dfe3f0'), lineM: rgb('#aab2d0'), lineD: rgb('#6d769c'), detA: rgb('#525a7a'), detB: rgb('#646c8e'),
+    fillL: rgb('#454c6c'), fillM: rgb('#343a56'), fillD: rgb('#262a40'), fillX: rgb('#1b1e2e'), pinkL: rgb('#f0a3b7'), pinkD: rgb('#a8566f') };
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = (y * w + x) * 4;
     if (!d[i + 3]) continue;
@@ -561,6 +571,7 @@ function layout() {
   ridge = Array.from({ length: W }, (_, x) => Math.round(12 + 30 * (1 - Math.abs(2 * vnoise(x, 0, 32, 4) - 1)) + 10 * vnoise(x * .7 + 9, 3, 64, 5)));
   city.sort((a, b) => Math.abs(a.x + a.w / 2 - CX) - Math.abs(b.x + b.w / 2 - CX));
   cityN = -1; // redraw at the new size, without dust puffs
+  starsIn = stars.filter(([x, y]) => x < W && y < H);
 }
 let resizeTimer;
 addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 120); }); // dragging a window: rebuild once it settles
@@ -576,7 +587,7 @@ function sysPos(s, t) {
 const muzzle = s => { const [x, y] = sysPos(s, last), [dx, dy] = MUZZLE[SYS[s].id] || [0, 0]; return [x + dx, y + dy]; };
 
 // Dot-grid stars like a printed star chart.
-const stars = [];
+const stars = []; let starsIn = []; // starsIn: the ones on this screen, refreshed by layout()
 for (let y = 3; y < 1000; y += 9) for (let x = 3; x < 2000; x += 9) if ((x * 7 + y * 13) % 5 < 2) stars.push([x + (x * y) % 4, y + (x + y) % 3, (x * 31 + y) % 7]);
 const parts = [], floats = [], shots = [], beams = [], pulses = [];
 const bots = Array.from({ length: 40 }, (_, k) => [(k * 97.3) % TW, 18 + (k * 53.7) % (TH - 36)]); // crew walking the surface
@@ -584,6 +595,7 @@ let off = 0, shake = 0, flash = 0, last = 0, zoom = 1, stage = 0, sel = -1;
 const cam = { z: 1, fx: 0, fy: 0, ax: 0, ay: 0 }; // eased camera: focus point (scene px), zoom, screen anchor
 const camOrigin = () => [Math.round(cam.ax - cam.fx * cam.z), Math.round(cam.ay - cam.fy * cam.z)];
 
+const prune = (a, keep) => { let j = 0; for (const q of a) if (keep(q)) a[j++] = q; a.length = j; }; // in place: no new array per frame
 function burst(x, y, colors, n, speed = 40) {
   for (let k = 0; k < n; k++) {
     const a = Math.random() * 7, v = speed * (.3 + Math.random());
@@ -724,7 +736,11 @@ function drawLife(t, heal) {
 let moonAt = null, moonI = 0, moonReady = 0;
 function drawMoon(x, y, k) { // k: 0..1 while it grows in
   const r = Math.max(1, Math.round(R * .12 * k));
-  for (let dy = -r; dy <= r; dy++) { const dx = Math.round(Math.sqrt(r * r - dy * dy)); P.fill(x - dx, y + dy, dx * 2 + 1, 1, C.soft); P.fill(x + Math.round(r * .3), y + dy, Math.max(0, dx - Math.round(r * .3)) + 1, 1, C.dim); }
+  const sh = Math.round(r * .3); // shadow side starts this far right of centre
+  for (let dy = -r; dy <= r; dy++) {
+    const dx = Math.round(Math.sqrt(r * r - dy * dy));
+    P.fill(x - dx, y + dy, dx * 2 + 1, 1, C.soft); P.fill(x + sh, y + dy, Math.max(0, dx - sh) + 1, 1, C.dim);
+  }
 }
 
 // Colony buildings (the first n of `city`), drawn with pen p into cityCv, then dimmed with the sprites' grit so they stay
@@ -804,7 +820,7 @@ function drawMarks(s, t) {
 
 function draw(t, heal) {
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-  for (const [x, y, k] of stars) if (x < W && y < H && (k || Math.sin(t * 2 + x) > -.5)) P.dot(x, y, k > 4 ? C.soft : C.dot);
+  for (const [x, y, k] of starsIn) if (k || Math.sin(t * 2 + x) > -.5) P.dot(x, y, k > 4 ? C.soft : C.dot);
   // atmosphere: the world's dead glow fading to its alive glow (colour stepped so the dithered ring is rarely rebuilt)
   const { dg, ag } = world(), c = ev?.id === 'flare' ? '255,224,136' : dg.map((d, k) => Math.round(d + (ag[k] - d) * heal) & ~7).join(','); // a flare lights the whole atmosphere gold
   const halo = haloRing(c), hs = Math.round(halo.width * R / Math.round(R0)); // hs = halo size at the current (zoomed) radius
@@ -1073,24 +1089,31 @@ $('simport').addEventListener('click', () => {
 });
 let armed = 0;
 $('snew').addEventListener('click', () => { // two taps within 4s: everything is erased, so one tap is not enough
-  if (!armed) { armed = setTimeout(() => { armed = 0; $('snew').textContent = 'New game'; $('snew').classList.remove('arm'); }, 4000); $('snew').textContent = 'Tap again to erase everything'; $('snew').classList.add('arm'); return; }
+  const arm = on => { $('snew').textContent = on ? 'Tap again to erase everything' : 'New game'; $('snew').classList.toggle('arm', on); };
+  if (!armed) { arm(true); armed = setTimeout(() => { armed = 0; arm(false); }, 4000); return; }
   frozen = true;
   location.href = location.pathname + '?reset';
 });
-function flashBtn(b, msg) { b.dataset.label ??= b.textContent; b.textContent = msg; clearTimeout(b._ft); b._ft = setTimeout(() => { b.textContent = b.dataset.label; }, 2000); } // the real label, even when clicked mid-flash
-let setOpener = null;
-function openSettings() {
+function flashBtn(b, msg) { // a 2 s message, then the real label (even when clicked mid-flash)
+  b.dataset.label ??= b.textContent; b.textContent = msg;
+  clearTimeout(b._ft); b._ft = setTimeout(() => { b.textContent = b.dataset.label; }, 2000);
+}
+// Settings and Talents: full-screen dialogs that shield the game and hand focus back to whatever opened them.
+const openers = {};
+function openModal(id, focus) {
   play('ui'); closePanel();
-  setOpener = document.activeElement;
-  $('settings').hidden = false; shield(true);
-  renderAch();
-  $('sclose').focus({ preventScroll: true });
+  openers[id] = document.activeElement;
+  $(id).hidden = false; shield(true);
+  focus.focus({ preventScroll: true });
 }
-function closeSettings() {
-  if ($('settings').hidden) return;
-  $('settings').hidden = true; shield(false);
-  if (setOpener?.isConnected && setOpener !== document.body) setOpener.focus({ preventScroll: true });
+function closeModal(id) {
+  if ($(id).hidden) return;
+  $(id).hidden = true; shield(false);
+  const o = openers[id];
+  if (o?.isConnected && o !== document.body) o.focus({ preventScroll: true });
 }
+function openSettings() { renderAch(); openModal('settings', $('sclose')); }
+function closeSettings() { closeModal('settings'); }
 $('gear').addEventListener('click', openSettings);
 // Photo mode: the scene without HUD, labels or numbers, at 3x, with a caption bar; the share sheet on phones, a PNG download elsewhere.
 let photo = false;
@@ -1112,7 +1135,9 @@ function takePhoto() {
   c.toBlob(async blob => {
     if (!blob) return;
     const file = new File([blob], name, { type: 'image/png' });
-    try { if (navigator.canShare?.({ files: [file] })) return await navigator.share({ files: [file], title: 'Terraform', text: `${world().name}, ${pct()}% terraformed` }); } catch (e) { if (e?.name === 'AbortError') return; }
+    try {
+      if (navigator.canShare?.({ files: [file] })) return await navigator.share({ files: [file], title: 'Terraform', text: `${world().name}, ${pct()}% terraformed` });
+    } catch (e) { if (e?.name === 'AbortError') return; } // dismissed: no download either
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name });
     document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1e4);
     toast(`Photo saved: ${name}`);
@@ -1222,7 +1247,7 @@ function refit(s, m0) { // a purchase that crossed Lv 10 / 25 / 50: the system's
 // Auto-buy (unlocked by healing the first world): a system with AUTO on buys its cheapest affordable upgrade, one level at a time.
 const autoReady = () => S.world >= 1;
 function autoBuy(s) {
-  if (!S.auto[s] || !S.on[s] || !autoReady()) return -1;
+  if (!S.auto[s] || !S.on[s] || !autoReady() || S.done) return -1; // a healed world waits for the warp: nothing left to buy for
   let k = -1;
   for (let j = 0; j < 3; j++) if (S.L[s][j] < MAXL && (k < 0 || price(s, j) < price(s, k))) k = j;
   if (k < 0 || S.life < price(s, k)) return -1;
@@ -1251,7 +1276,11 @@ function rowClick(k) {
   fire(s, true);
   updateUI();
 }
-$('pmul').addEventListener('click', () => { bulk = { 1: 10, 10: 0, 0: 1 }[bulk]; $('pmul').textContent = bulk ? 'x' + bulk : 'MAX'; $('pmul').setAttribute('aria-label', `Levels per purchase: ${$('pmul').textContent}`); play('ui'); updateUI(); });
+$('pmul').addEventListener('click', () => { // x1 -> x10 -> MAX
+  bulk = { 1: 10, 10: 0, 0: 1 }[bulk];
+  $('pmul').textContent = bulk ? 'x' + bulk : 'MAX'; $('pmul').setAttribute('aria-label', `Levels per purchase: ${$('pmul').textContent}`);
+  play('ui'); updateUI();
+});
 
 let opener = null; // element that opened the panel, to give focus back on close
 function openPanel(s) {
@@ -1339,7 +1368,7 @@ for (const [x, y, size] of [[150, t0.M, 130], ...[t1, t2].flatMap(t => [[150, t.
 const lines = document.createElementNS(SVGNS, 'svg');
 lines.setAttribute('viewBox', '0 0 300 420'); lines.setAttribute('preserveAspectRatio', 'none'); lines.setAttribute('shape-rendering', 'crispEdges');
 tree.append(lines);
-let selTal = 'spark', talOpener = null;
+let selTal = 'spark';
 for (const t of TAL) {
   if (t.req) { // square connector: down from the parent, across at `via`, down into the child
     const pr = talById[t.req], via = t.via ?? t.y;
@@ -1386,19 +1415,8 @@ $('tbuy').addEventListener('click', () => {
   renderTal(); updateUI(); save();
 });
 $('treset').addEventListener('click', () => { S.seeds += S.tal.length; S.tal = []; renderTal(); updateUI(); save(); }); // free respec
-function openTalents() {
-  play('ui');
-  closePanel();
-  talOpener = document.activeElement;
-  $('talents').hidden = false; shield(true);
-  renderTal();
-  talById[selTal].el.focus({ preventScroll: true });
-}
-function closeTalents() {
-  if ($('talents').hidden) return;
-  $('talents').hidden = true; shield(false);
-  if (talOpener?.isConnected && talOpener !== document.body) talOpener.focus({ preventScroll: true });
-}
+function openTalents() { renderTal(); openModal('talents', talById[selTal].el); }
+function closeTalents() { closeModal('talents'); }
 $('tclose').addEventListener('click', closeTalents);
 const talTile = document.createElement('button'); // own tile in the bar's bottom-right corner, apart from the systems
 talTile.className = 'tile'; talTile.id = 'ttile'; talTile.setAttribute('aria-label', 'Talents'); talTile.setAttribute('aria-controls', 'talents');
@@ -1420,7 +1438,7 @@ $('goal').addEventListener('click', () => {
   if (S.done) return openWarp();
   const g = GOALS[S.goal];
   if (!g) return;
-  if (g.reward && g.get() >= g.need) { const r = rewardOf(g); S.life += r; S.earned += r; S.goal++; play('coin'); return updateUI(); }
+  if (g.reward && g.get() >= g.need) { earn(rewardOf(g)); S.goal++; play('coin'); return updateUI(); }
   const s = typeof g.go === 'function' ? g.go() : g.go; // not done yet: glide the camera to the system it is about
   if (s >= 0) openPanel(s); else closePanel();
 });
@@ -1466,7 +1484,8 @@ $('warpstay').addEventListener('click', () => { // admire the living planet; the
 function warp(boon = '') {
   $('warp').hidden = true; shield(false); play('warp');
   tiles[0].focus({ preventScroll: true });
-  Object.assign(S, { world: Math.min(S.world + 1, MAX_WORLD), life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: S.seeds + 1, boon, offer: [], contract: null });
+  Object.assign(S, { world: Math.min(S.world + 1, MAX_WORLD), seeds: S.seeds + 1, boon, life: 0, earned: 0, goal: 1, start: last,
+    done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), offer: [], contract: null });
   if (boon === 'head') S.on[0] = S.on[1] = true;
   if (has('seedbank')) S.life = 1000 * boost();
   const before = SYS.map(sy => sy.id);
@@ -1666,6 +1685,7 @@ const SAVE = 'terraform-save-v1', awayCap = () => (has('sleep') ? 24 : 12) * 360
 const syncStage = () => { stage = STAGES.filter(s => healOf(S.earned) >= s.at).length; }; // no milestone pop-ups for old progress
 function save() {
   if (frozen) return;
+  if (S.contract) S.contract.paused = $('c').inert; // a dialog is open: the time until the next load must not count
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
@@ -1682,7 +1702,7 @@ const fromSave = (v, played) => ({ life: v.life, earned: v.earned, taps: v.taps,
   seeds: v.seeds ?? v.world, // saves from before talents: one seed per planet already healed
   tal: [...new Set(v.tal || [])], intro: v.intro ?? true, // saves from before the intro skip it
   done: v.done ?? false, best: v.best ?? {}, ach: [...new Set(v.ach || [])], daily: v.daily ?? '',
-  n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0, ...(v.n || {}) },
+  n: { ...N0, ...(v.n || {}) },
   boon: v.boon ?? '', offer: v.offer ?? [], contract: v.contract ?? null, auto: v.auto ?? SYS.map(() => false) });
 // The save is outside data (could be stale or hand-edited): check every field before trusting it.
 const optional = (v, ok) => v === undefined || ok(v); // fields that older saves lack
@@ -1704,7 +1724,8 @@ const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
   && optional(d.S.auto, v => Array.isArray(v) && v.length === SYS.length && v.every(x => typeof x === 'boolean'))
   && optional(d.S.contract, c => c === null || !!c && typeof c === 'object' && Object.hasOwn(CONTRACT_KINDS, c.kind)
     && ['arg', 't', 'secs', 'reward'].every(k => Number.isFinite(c[k])) && c.arg >= 0 && c.reward >= 0
-    && (c.kind !== 'unlock' || Number.isInteger(c.arg) && c.arg > 0 && c.arg < SYS.length) && (c.kind !== 'earn' || Number.isFinite(c.from)));
+    && (c.kind !== 'unlock' || Number.isInteger(c.arg) && c.arg > 0 && c.arg < SYS.length) && (c.kind !== 'earn' || Number.isFinite(c.from))
+    && optional(c.paused, v => typeof v === 'boolean'));
 console.assert(!validSave({ t: 1, S: { life: 0, earned: 0, taps: 0, goal: 0, world: 0, on: [false, true, false, false, false, false], L: SYS.map(() => [0, 0, 0]) } }), 'save: out-of-order unlock');
 console.assert(validSave({ t: 1, S: { life: 5, earned: 5, taps: 1, goal: 0, world: 0, on: [true, false, false, false, false, false], L: [[1, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]] } }), 'save: minimal old save');
 // Restores the save and credits the time since it was written. Returns false if there was nothing usable.
@@ -1730,9 +1751,13 @@ function load() {
 function away(since) {
   const sec = Math.min(awayCap(), Math.max(0, (Date.now() - since) / 1000)), gain = rateOf(false) * sec * (has('dream') ? 2 : 1);
   if (ev && (evT -= sec) <= 0) endEvent(); // the event's clock ran too
-  S.life += gain; S.earned += gain; // always credit, even a few seconds in another tab
+  earn(gain); // always credit, even a few seconds in another tab
   S.n.away = Math.max(S.n.away, Math.round(sec));
-  if (S.contract) { S.contract.t -= sec; if (S.contract.kind === 'earn') S.contract.from += gain; } // the clock runs while away; offline income doesn't count
+  if (S.contract) { // the clock runs while away (unless a dialog was open: it's paused there); offline income doesn't count
+    if (!S.contract.paused && !$('c').inert) S.contract.t -= sec;
+    S.contract.paused = false;
+    if (S.contract.kind === 'earn') S.contract.from += gain;
+  }
   if (sec >= 30 && gain > 0) {
     const h = sec / 3600 | 0, m = (sec % 3600) / 60 | 0;
     toast(`WELCOME BACK. In ${h ? h + 'h ' : ''}${m}m away your colony made ${fmt(gain)} life.`, true);
@@ -1762,7 +1787,8 @@ cv.addEventListener('pointerdown', e => {
     if (Math.abs(x - sx) <= img.width / 2 + HIT / 2 && Math.abs(y - sy) <= img.height / 2 + HIT / 2 && d < best) { best = d; hit = s; }
   });
   if (hit >= 0) return openPanel(hit);
-  if (moonAt && Math.hypot(x - moonAt.x, y - moonAt.y) <= moonAt.r + 3 && (moonAt.front || (x - CX) ** 2 + (y - CY) ** 2 > R * R)) return tapMoon(); // after the systems, so a passing moon never steals their taps; behind the planet: only the part that shows
+  // the moon comes after the systems (a passing moon never steals their taps); behind the planet only its visible part counts
+  if (moonAt && Math.hypot(x - moonAt.x, y - moonAt.y) <= moonAt.r + 3 && (moonAt.front || (x - CX) ** 2 + (y - CY) ** 2 > R * R)) return tapMoon();
   if (sel >= 0) return closePanel(); // panel open: a tap on the planet, the ground or empty sky just closes it (objects above still act)
   if (y >= GY) return; // the ground is solid
   if ((x - CX) ** 2 + (y - CY) ** 2 > R * R) return;
@@ -1793,7 +1819,7 @@ function tapPlanet(x, y, auto = false) {
   }
   const crit = Math.random() < (has('crit2') ? .2 : has('crit') ? .1 : 0), storm = ev?.id === 'shower'; // Lucky Strike / Jackpot; meteor showers pay x5
   const g = tapGain() * (crit ? 10 : 1) * (storm ? 5 : 1) * (auto ? 1 : comboMul());
-  S.life += g; S.earned += g; S.taps++;
+  earn(g); S.taps++;
   if (crit) S.n.crit++;
   if (storm) S.n.storm++;
   if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.pink, end: true }); }
@@ -1817,8 +1843,8 @@ function startEvent(id = Object.keys(EVENTS)[Math.random() * 3 | 0]) {
 }
 function endEvent() { ev = null; comet = null; evNext = (120 + Math.random() * 120) / (S.boon === 'storm' ? 3 : 1); } // Storm Season: 3x as often
 function catchComet() {
-  const g = Math.max(100 * priceScale(), rateOf(false) * 60);
-  S.life += g; S.earned += g; S.n.comet++; buzz([30, 30, 60]);
+  const g = pay(60, 100);
+  earn(g); S.n.comet++; buzz([30, 30, 60]);
   burst(comet.x, comet.y, [C.sun, C.line, C.pink], 40, 70); play('crit'); shake = .6;
   floats.push({ x: comet.x, y: comet.y - 10, text: '+' + fmt(g), life: 1.6, col: C.sun });
   endEvent();
@@ -1833,7 +1859,7 @@ function stepEvents(dt) {
     m.x += m.vx * dt; m.y += m.vy * dt;
     if (Math.hypot(m.x - CX, m.y - CY) < R || m.y > GY || m.x < -10) { m.dead = true; if (m.y < GY) burst(m.x, m.y, [C.sun, C.line], 6, 30); }
   }
-  meteors.splice(0, meteors.length, ...meteors.filter(m => !m.dead));
+  prune(meteors, m => !m.dead);
   if (comet) comet.x += comet.vx * dt;
 }
 
@@ -1842,7 +1868,8 @@ let conNext = 60; // seconds of play until the next offer
 // A contract is plain data { kind, arg, from?, secs, t (seconds left), reward } so it saves and reloads; its kind supplies the rules.
 const CONTRACT_KINDS = { // pick() returns { arg, from?, secs } or null when the kind does not fit the moment
   unlock: { pick: () => { const s = S.on.indexOf(false); return s > 0 && unlocked(s) ? { arg: s, secs: 180 } : null; }, text: c => `Unlock the ${SYS[c.arg].name}`, done: c => S.on[c.arg] },
-  level: { pick: () => { const top = Math.max(...S.L.flat()); return top < MAXL ? { arg: Math.min(MAXL, top + 5), secs: 120 } : null; }, text: c => `Get any upgrade to Lv ${c.arg}`, done: c => Math.max(...S.L.flat()) >= c.arg },
+  level: { pick: () => { const top = Math.max(...S.L.flat()); return top < MAXL ? { arg: Math.min(MAXL, top + 5), secs: 120 } : null; },
+    text: c => `Get any upgrade to Lv ${c.arg}`, done: c => Math.max(...S.L.flat()) >= c.arg },
   combo: { pick: () => ({ arg: 15, secs: 60 }), text: c => `Chain a ${c.arg}-tap combo`, done: c => combo >= c.arg },
   earn: { pick: () => ({ arg: Math.max(500 * priceScale(), rateOf() * 130), from: S.earned, secs: 90 }), text: c => `Earn ${fmt(c.arg)} life`, done: c => S.earned - c.from >= c.arg },
 };
@@ -1851,7 +1878,7 @@ function stepContract(dt) {
   const c = S.contract;
   if (c) {
     if (CONTRACT_KINDS[c.kind].done(c)) { // paid: about 3 minutes of income
-      S.life += c.reward; S.earned += c.reward; S.n.contracts++;
+      earn(c.reward); S.n.contracts++;
       toast(`CONTRACT DONE: ${conText(c)}. +${fmt(c.reward)} life.`, true); play('coin'); buzz(20); quip(QUIPS.paid);
       S.contract = null; conNext = 90;
     } else if (!$('c').inert && (c.t -= dt) <= 0) { toast(`Contract expired: ${conText(c)}.`); S.contract = null; conNext = 90; } // the clock pauses behind dialogs, where the job can't be worked on
@@ -1860,7 +1887,7 @@ function stepContract(dt) {
   if (!S.intro || !S.on[0] || S.done || $('c').inert || (conNext -= dt) > 0) return;
   const options = Object.entries(CONTRACT_KINDS).map(([kind, k]) => { const o = k.pick(); return o && { kind, ...o }; }).filter(Boolean);
   const o = options[Math.random() * options.length | 0];
-  S.contract = { ...o, t: o.secs, reward: Math.max(300 * priceScale(), rateOf(false) * 180) };
+  S.contract = { ...o, t: o.secs, reward: pay(180, 300) };
   play('ui'); quip(`New contract: ${conText(S.contract)}. You have ${mmss(o.secs)}. Optional, but HQ pays well.`);
 }
 
@@ -1882,15 +1909,15 @@ function tapMoon() {
   if (last < moonReady) return;
   moonReady = last + 3;
   const g = tapGain() * 5;
-  S.life += g; S.earned += g; S.n.moon = (S.n.moon || 0) + 1;
+  earn(g); S.n.moon++;
   burst(moonAt.x, moonAt.y, [C.soft, C.line], 16, 30); play('coin');
   floats.push({ x: moonAt.x, y: moonAt.y - moonAt.r - 6, text: '+' + fmt(g), life: 1.4, col: C.soft });
   toast(MOON_FACTS[moonI++ % MOON_FACTS.length]);
   if (S.n.moon === 1 || S.n.moon % 5 === 0) quip(QUIPS.moon);
 }
 function openCrate() {
-  const [x, y] = cratePos(last), g = Math.max(500 * priceScale(), rateOf(false) * 600), seed = Math.random() < .1;
-  S.life += g; S.earned += g; S.daily = crate.day; S.n.crates++; crate = null;
+  const [x, y] = cratePos(last), g = pay(600, 500), seed = Math.random() < .1;
+  earn(g); S.daily = crate.day; S.n.crates++; crate = null;
   if (seed) S.seeds++;
   burst(x, y, [C.sun, C.line, C.pink], 50, 70); play('coin'); buzz(30); shake = .4;
   floats.push({ x, y: y - 10, text: '+' + fmt(g), life: 1.8, col: C.sun });
@@ -1945,7 +1972,7 @@ function stepCine(t, dt) {
   if (due >= 0 && c.t > due * .7) c.planets[due].lush = makeLush(c.planets[due].w, c.planets[due].seed);
   // scene: the sky, then each world popping in
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-  for (const [x, y, k] of stars) if (x < W && y < H) P.dot(x, y, k > 4 ? C.soft : C.dot);
+  for (const [x, y, k] of starsIn) P.dot(x, y, k > 4 ? C.soft : C.dot);
   c.planets.forEach((p, i) => {
     const at = .8 + i * .7, k = Math.min(1, (c.t - at) / .4);
     if (k <= 0 || !p.lush) return;
@@ -1995,7 +2022,7 @@ function step(ms) {
   last = t; paidAt = now; resume = false;
   if (!W) return; // no layout yet (0-size viewport)
   if (gap >= 30) away(now - gap * 1000);
-  else { const g = rateOf() * gap; S.life += g; S.earned += g; }
+  else earn(rateOf() * gap);
   const heal = healOf(S.earned);
   off = (off + dt * 6) % TW;
   if (cine) return stepCine(t, dt);
@@ -2024,12 +2051,12 @@ function step(ms) {
     sy.next = t + cadence(s) * (ev?.id === 'flare' ? .5 : 1) * (.7 + Math.random() * .6);
   });
   for (const s of shots) if ((s.t += dt) >= s.dur) { s.done = true; land(s.s, s.tx, s.ty, s.real, s.quiet); }
-  shots.splice(0, shots.length, ...shots.filter(s => !s.done));
+  prune(shots, s => !s.done);
   for (const p of pulses) { p.r += (p.x === undefined ? R * 1.4 : 50) * dt; p.life -= dt * 1.2; }
   for (const q of parts) { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= .95; q.vy *= .95; q.life -= dt * 1.4; }
   for (const f of floats) { f.y -= 16 * dt; f.life -= dt * 1.2; }
   for (const b of beams) if (b.delay > 0) b.delay -= dt; else b.life -= dt * (b.fade || 5);
-  for (const a of [parts, floats, beams, pulses]) a.splice(0, a.length, ...a.filter(q => q.life > 0));
+  for (const a of [parts, floats, beams, pulses]) prune(a, q => q.life > 0);
 
   draw(t, heal);
   if ((uiTick += dt) > .1) { uiTick = 0; updateUI(); }
