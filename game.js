@@ -30,7 +30,7 @@ const roman = n => ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 
 // seeds: unspent Star Seeds (one per healed planet); tal: unlocked talent ids; intro: the commander's tutorial is done;
 // done: this world is at 100% (the warp is waiting); best: fastest time to heal each world, by name
 // ach: achievement ids earned; n: lifetime counters the achievements watch (crits, comets caught, taps in meteor showers, longest time away in s)
-const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0 }, daily: '', boon: '' }; // boon: the warp boon active on this world // daily: local date of the last supply drop opened
+const S = { life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0 }, daily: '', boon: '', offer: [], contract: null }; // boon: the warp boon on this world; offer: the 3 boons the waiting warp offers; contract: the open side job (data only) // daily: local date of the last supply drop opened
 console.assert(healOf(0) === 0 && healOf(GOAL) === 1 && healOf(GOAL * 9) === 1, 'heal');
 const has = id => S.tal.includes(id);
 const boost = () => (has('echo') ? 2.5 : 2) ** S.world; // every world you finish multiplies all output for good
@@ -1177,10 +1177,10 @@ function updateUI() {
   });
   talTile.classList.toggle('ok', S.seeds > 0 && TAL.some(canTal));
   checkAch();
-  const cs = $('contract'); cs.hidden = !contract;
-  const left = Math.ceil(contract?.t ?? 0);
-  if (contract) set(cs, `<b>CONTRACT ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</b> ${contract.text} <span>${ICON}${fmt(contract.reward)}</span>`);
-  if (innerWidth < 640 && SIDE) $('toast').style.top = (SIDE.b * PX + 10 + (contract ? cs.offsetHeight + 6 : 0)) + 'px'; // phones: toasts step below the contract
+  const cs = $('contract'), job = S.contract; cs.hidden = !job;
+  const left = Math.max(0, Math.ceil(job?.t ?? 0));
+  if (job) set(cs, `<b>CONTRACT ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</b> ${conText(job)} <span>${ICON}${fmt(job.reward)}</span>`);
+  if (innerWidth < 640 && SIDE) $('toast').style.top = (SIDE.b * PX + 10 + (job ? cs.offsetHeight + 6 : 0)) + 'px'; // phones: toasts step below the contract
   updateGuide();
   if (W && hudH() !== layoutH) resize(); // goal text wrapped or the HUD changed size: re-fit the scene below it
 
@@ -1419,10 +1419,8 @@ function openWarp() {
     ? `All ${WORLDS.length} worlds are alive. Best times: ${WORLDS.map(w => `${w.name} ${mmss(S.best[w.name] ?? 0)}`).join(', ')}. ${S.taps} taps and ${S.ach.length}/${ACH.length} achievements in all. Cycle ${roman(n / WORLDS.length + 1)} starts back at ${next}, with all output x${mult} forever.`
     : `${world().name} is alive. Took ${mmss(S.best[world().name])}. Next stop: ${next}, with all output x${mult} forever. You also earn a Star Seed to spend on Talents.`;
   $('boonh').textContent = end ? `Pick a boon for cycle ${roman(n / WORLDS.length + 1)} and warp` : 'Pick a boon for the next world and warp';
-  if (offerFor !== S.world) { // three different boons, kept while this world waits (Stay, reopen, same choice)
-    offer = BOONS.map(b => b.id).sort(() => Math.random() - .5).slice(0, 3); offerFor = S.world;
-  }
-  $('boons').replaceChildren(...offer.map(id => {
+  if (!S.offer.length) S.offer = BOONS.map(b => b.id).sort(() => Math.random() - .5).slice(0, 3); // saved: Stay, reload or reopen keep the same three
+  $('boons').replaceChildren(...S.offer.map(id => {
     const b = BOONS.find(x => x.id === id), el = document.createElement('button');
     el.className = 'boon'; el.innerHTML = `<b>${b.name}</b><small>${b.desc}</small>`;
     el.addEventListener('click', () => { if (end) startCine(id); else { warp(id); save(); } }); // the sector's last world: the cinematic first
@@ -1432,7 +1430,6 @@ function openWarp() {
   $('warp').hidden = false; shield(true);
   $('boons').firstChild.focus();
 }
-let offer = [], offerFor = -1;
 $('warpshare').addEventListener('click', async () => { // brag: the system share sheet, or the clipboard
   const text = `I brought ${world().name} back to life in ${mmss(S.best[world().name] ?? 0)} in TERRAFORM, a pixel idle game.`, url = 'https://utkarshbahuguna.me/terraform-idle/';
   try { if (navigator.share) await navigator.share({ title: 'Terraform', text, url }); else { await navigator.clipboard.writeText(`${text} ${url}`); flashBtn($('warpshare'), 'Copied'); } } catch { /* dismissed */ }
@@ -1447,15 +1444,15 @@ $('warpstay').addEventListener('click', () => { // admire the living planet; the
 function warp(boon = '') {
   $('warp').hidden = true; shield(false); play('warp');
   tiles[0].focus({ preventScroll: true });
-  Object.assign(S, { world: Math.min(S.world + 1, MAX_WORLD), life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: S.seeds + 1, boon });
+  Object.assign(S, { world: Math.min(S.world + 1, MAX_WORLD), life: 0, earned: 0, goal: 1, start: last, done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), seeds: S.seeds + 1, boon, offer: [], contract: null });
   if (boon === 'head') S.on[0] = S.on[1] = true;
-  if (boon === 'storm') evNext = Math.min(evNext, 40);
   if (has('seedbank')) S.life = 1000 * boost();
   const before = SYS.map(sy => sy.id);
   setLoadout(S.world); resize(); // ground systems change size: re-fit the colony around them
   const fresh = SYS.filter(sy => !before.includes(sy.id)).map(sy => sy.name);
   items.length = shots.length = 0;
-  contract = null; conNext = 60; // a fresh world, a fresh job board
+  conNext = 60; meteors.length = 0; if (ev) endEvent(); // a fresh world: fresh job board, the sky's event stays behind
+  if (boon === 'storm') evNext = Math.min(evNext, 40); // after endEvent(), which would reset it
   stage = 0; zoom = .3; flash = 1; shake = 1; // arrive from far away
   buildWorld();
   guide([ // arrival briefing
@@ -1649,7 +1646,7 @@ function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify({
       t: hiddenAt || Date.now(), played: last - S.start, // hidden tab: the loop stopped when it was hidden, so count from then
-      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n, daily: S.daily, boon: S.boon },
+      S: { life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal, intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n, daily: S.daily, boon: S.boon, offer: S.offer, contract: S.contract },
       items: items.slice(-150).map(it => [Math.round(it.u), Math.round(it.v)]),
     }));
   } catch { /* private mode or full storage: keep playing unsaved */ }
@@ -1669,7 +1666,11 @@ const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
   && optional(d.S.ach, v => Array.isArray(v) && v.every(id => ACH.some(a => a.id === id)))
   && optional(d.S.n, v => !!v && typeof v === 'object' && Object.values(v).every(x => Number.isFinite(x) && x >= 0))
   && optional(d.S.daily, v => v === '' || typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v))
-  && optional(d.S.boon, v => v === '' || BOONS.some(b => b.id === v));
+  && optional(d.S.boon, v => v === '' || BOONS.some(b => b.id === v))
+  && optional(d.S.offer, v => Array.isArray(v) && v.length <= 3 && v.every(id => BOONS.some(b => b.id === id)))
+  && optional(d.S.contract, c => c === null || !!c && typeof c === 'object' && Object.hasOwn(CONTRACT_KINDS, c.kind)
+    && ['arg', 't', 'secs', 'reward'].every(k => Number.isFinite(c[k])) && c.arg >= 0 && c.reward >= 0
+    && (c.kind !== 'unlock' || Number.isInteger(c.arg) && c.arg > 0 && c.arg < SYS.length) && (c.kind !== 'earn' || Number.isFinite(c.from)));
 console.assert(!validSave({ t: 1, S: { life: 0, earned: 0, taps: 0, goal: 0, world: 0, on: [false, true, false, false, false, false], L: SYS.map(() => [0, 0, 0]) } }), 'save: out-of-order unlock');
 console.assert(validSave({ t: 1, S: { life: 5, earned: 5, taps: 1, goal: 0, world: 0, on: [true, false, false, false, false, false], L: [[1, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]] } }), 'save: minimal old save');
 // Restores the save and credits the time since it was written. Returns false if there was nothing usable.
@@ -1682,7 +1683,7 @@ function load() {
   }
   const v = d.S, prev = S.world;
   Object.assign(S, { life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world,
-    on: v.on, L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0), done: v.done ?? false, best: v.best ?? {}, boon: v.boon ?? '',
+    on: v.on, L: v.L, start: last - (Number.isFinite(d.played) ? d.played : 0), done: v.done ?? false, best: v.best ?? {}, boon: v.boon ?? '', offer: v.offer ?? [], contract: v.contract ?? null,
     ach: [...new Set(v.ach || [])], n: { crit: 0, comet: 0, storm: 0, away: 0, combo: 0, crates: 0, moon: 0, contracts: 0, ...(v.n || {}) }, daily: v.daily ?? '',
     seeds: v.seeds ?? v.world, tal: [...new Set(v.tal || [])], intro: v.intro ?? true }); // saves from before the intro skip it // saves from before talents: one seed per planet already healed
   const was = SYS.map(sy => sy.id).join();
@@ -1699,6 +1700,7 @@ function away(since) {
   const sec = Math.min(awayCap(), Math.max(0, (Date.now() - since) / 1000)), gain = rateOf() * sec * (has('dream') ? 2 : 1);
   S.life += gain; S.earned += gain; // always credit, even a few seconds in another tab
   S.n.away = Math.max(S.n.away, Math.round(sec));
+  if (S.contract) { S.contract.t -= sec; if (S.contract.kind === 'earn') S.contract.from += gain; } // the clock runs while away; offline income doesn't count
   if (sec >= 30 && gain > 0) {
     const h = sec / 3600 | 0, m = (sec % 3600) / 60 | 0;
     toast(`WELCOME BACK. In ${h ? h + 'h ' : ''}${m}m away your colony made ${fmt(gain)} life.`, true);
@@ -1803,27 +1805,30 @@ function stepEvents(dt) {
 }
 
 // ---------- contracts: optional timed side jobs from the Commander, built from where the player is right now ----------
-let contract = null, conNext = 60; // conNext: seconds of play until the next offer
-const CONTRACTS = [ // each returns a contract { text, secs, done } or null when it does not fit the moment
-  () => { const s = S.on.indexOf(false); return s > 0 && unlocked(s) ? { text: `Unlock the ${SYS[s].name}`, secs: 180, done: () => S.on[s] } : null; },
-  () => { const top = Math.max(...S.L.flat()), n = Math.min(MAXL, top + 5); return top < MAXL ? { text: `Get any upgrade to Lv ${n}`, secs: 120, done: () => Math.max(...S.L.flat()) >= n } : null; },
-  () => ({ text: 'Chain a 15-tap combo', secs: 60, done: () => combo >= 15 }),
-  () => { const from = S.earned, n = Math.max(500, rateOf() * 130); return { text: `Earn ${fmt(n)} life`, secs: 90, done: () => S.earned - from >= n }; },
-];
+let conNext = 60; // seconds of play until the next offer
+// A contract is plain data { kind, arg, from?, secs, t (seconds left), reward } so it saves and reloads; its kind supplies the rules.
+const CONTRACT_KINDS = { // pick() returns { arg, from?, secs } or null when the kind does not fit the moment
+  unlock: { pick: () => { const s = S.on.indexOf(false); return s > 0 && unlocked(s) ? { arg: s, secs: 180 } : null; }, text: c => `Unlock the ${SYS[c.arg].name}`, done: c => S.on[c.arg] },
+  level: { pick: () => { const top = Math.max(...S.L.flat()); return top < MAXL ? { arg: Math.min(MAXL, top + 5), secs: 120 } : null; }, text: c => `Get any upgrade to Lv ${c.arg}`, done: c => Math.max(...S.L.flat()) >= c.arg },
+  combo: { pick: () => ({ arg: 15, secs: 60 }), text: c => `Chain a ${c.arg}-tap combo`, done: c => combo >= c.arg },
+  earn: { pick: () => ({ arg: Math.max(500, rateOf() * 130), from: S.earned, secs: 90 }), text: c => `Earn ${fmt(c.arg)} life`, done: c => S.earned - c.from >= c.arg },
+};
+const conText = c => CONTRACT_KINDS[c.kind].text(c);
 function stepContract(dt) {
-  if (contract) {
-    if (contract.done()) { // paid: about 3 minutes of income
-      S.life += contract.reward; S.earned += contract.reward; S.n.contracts++;
-      toast(`CONTRACT DONE: ${contract.text}. +${fmt(contract.reward)} life.`, true); play('coin'); buzz(20); quip(QUIPS.paid);
-      contract = null; conNext = 90;
-    } else if ((contract.t -= dt) <= 0) { toast(`Contract expired: ${contract.text}.`); contract = null; conNext = 90; }
+  const c = S.contract;
+  if (c) {
+    if (CONTRACT_KINDS[c.kind].done(c)) { // paid: about 3 minutes of income
+      S.life += c.reward; S.earned += c.reward; S.n.contracts++;
+      toast(`CONTRACT DONE: ${conText(c)}. +${fmt(c.reward)} life.`, true); play('coin'); buzz(20); quip(QUIPS.paid);
+      S.contract = null; conNext = 90;
+    } else if ((c.t -= dt) <= 0) { toast(`Contract expired: ${conText(c)}.`); S.contract = null; conNext = 90; }
     return;
   }
   if (!S.intro || !S.on[0] || S.done || $('c').inert || (conNext -= dt) > 0) return;
-  const options = CONTRACTS.map(f => f()).filter(Boolean);
-  contract = { ...options[Math.random() * options.length | 0], reward: Math.max(300, rateOf() * 180) };
-  contract.t = contract.secs;
-  play('ui'); quip(`New contract: ${contract.text}. You have ${mmss(contract.secs)}. Optional, but HQ pays well.`);
+  const options = Object.entries(CONTRACT_KINDS).map(([kind, k]) => { const o = k.pick(); return o && { kind, ...o }; }).filter(Boolean);
+  const o = options[Math.random() * options.length | 0];
+  S.contract = { ...o, t: o.secs, reward: Math.max(300, rateOf() * 180) };
+  play('ui'); quip(`New contract: ${conText(S.contract)}. You have ${mmss(o.secs)}. Optional, but HQ pays well.`);
 }
 
 // ---------- daily supply drop: once per calendar day a crate parachutes into the sky and waits to be tapped ----------
@@ -2011,8 +2016,10 @@ function step(ms) {
       && ratio('bulk', () => price(0, 1)) === Math.ceil(ucost(0, 1, 0) * .8) && ratio('', () => price(0, 1)) === base.price, 'boon multipliers');
     console.assert(/^\d{4}-\d{2}-\d{2}$/.test(today()), 'daily date format');
     Object.assign(S, { intro: true, daily: today() }); crateWait = 0; stepCrate(1); console.assert(!crate, 'one supply drop per day');
-    console.assert(CONTRACTS[0]()?.text === `Unlock the ${SYS[1].name}`, 'contract: unlock the next system');
-    S.on = SYS.map(() => true); console.assert(CONTRACTS[0]() === null, 'contract: nothing left to unlock');
+    console.assert(CONTRACT_KINDS.unlock.pick()?.arg === 1, 'contract: unlock the next system');
+    const job = { kind: 'earn', arg: 500, from: 0, secs: 90, t: 40, reward: 300 }, sv = c => validSave({ t: 1, S: { ...JSON.parse(keep), contract: c } });
+    console.assert(sv(job) && sv(null) && !sv({ ...job, kind: 'cheat' }) && !sv({ ...job, kind: 'unlock', arg: 9 }), 'contract: save validation');
+    S.on = SYS.map(() => true); console.assert(CONTRACT_KINDS.unlock.pick() === null, 'contract: nothing left to unlock');
   } finally { Object.assign(S, JSON.parse(keep)); ({ bulk, combo, crateWait } = was); crate = null; }
 })();
 if (new URLSearchParams(location.search).has('reset')) { // ?reset: start over (demos, judges); runs after the old page saved on its way out
