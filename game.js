@@ -1055,7 +1055,7 @@ function draw(t, heal) {
   ctx.globalAlpha = 1;
   if (combo >= 3 && !photo) { // combo counter over the upper-left of the planet, fading as the chain runs out of time
     ctx.globalAlpha = Math.max(.3, 1 - (t - comboAt) / COMBO_GAP);
-    text(`${combo}` + (comboMul() > 1 ? ` x${comboMul()}` : ''), CX - R * .55, CY - R * .8, comboMul() > 1 ? C.sun : C.line, 2);
+    text(`${combo}` + (comboMul() > 1 ? ` x${comboMul()}` : ''), CX - R * .55, CY - R * .8, comboMul() > 1 ? C.sun : C.line);
     ctx.globalAlpha = 1;
   }
 
