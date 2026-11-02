@@ -39,15 +39,21 @@ html.calm #goal.ready { animation: none; }
 @media (min-width: 900px) { #toast { left: calc(16px + env(safe-area-inset-left)); transform: none; width: 340px; } } /* wide: the empty sky on the left, clear of the top system */
 
 /* bottom dock: the terraformed bar along its top edge, the world line, then the system tiles */
-#dock { position: fixed; left: 0; right: 0; bottom: 0; background: var(--deep); }
-#heal { height: 4px; background: var(--bg); }
-#healbar { height: 100%; width: 0; background: var(--acc); }
-#world { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 6px 16px 0; padding-left: calc(16px + env(safe-area-inset-left)); padding-right: calc(16px + env(safe-area-inset-right)); font-size: .9rem; }
+#dock { position: fixed; left: 0; right: 0; bottom: 0; background: var(--deep); border-top: 2px solid var(--line); } /* the ledge the commander stands behind */
+#world { display: grid; grid-template-columns: auto minmax(0, 520px) auto; justify-content: start; grid-template-areas: "info bar txt"; align-items: center; column-gap: 16px; row-gap: 4px; padding: 8px 16px 0; padding-left: calc(16px + env(safe-area-inset-left)); padding-right: calc(16px + env(safe-area-inset-right)); font-size: .9rem; }
+#winfo { grid-area: info; }
 #wname { font-weight: normal; color: var(--acc); }
 #wtime { color: var(--soft); font-variant-numeric: tabular-nums; }
 #wtrait { display: block; color: var(--soft); font-size: .8rem; } /* the world's trait, under its name */
 #wtrait:empty { display: none; }
-#healtxt { color: var(--soft); text-align: right; white-space: nowrap; }
+/* terraformed bar: four chunks, one per milestone (moon, clouds, rings, alive) */
+#heal { grid-area: bar; position: relative; height: 14px; background: var(--bg); border: 2px solid var(--dim); }
+#healbar { height: 100%; width: 0; background: var(--acc); }
+#heal::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent calc(25% - 1px), var(--dim) 0 calc(25% + 1px), transparent 0 calc(50% - 1px), var(--dim) 0 calc(50% + 1px), transparent 0 calc(75% - 1px), var(--dim) 0 calc(75% + 1px), transparent 0); }
+#healtxt { grid-area: txt; color: var(--soft); white-space: nowrap; }
+#healtxt b { font-weight: normal; color: var(--line); }
+@media (max-width: 700px) { #world { grid-template-columns: 1fr; justify-content: stretch; grid-template-areas: "info" "bar" "txt"; } } /* narrow: name, bar, then what it means */
+@media (max-height: 500px) { #top { flex-direction: row; justify-content: center; gap: 16px; padding-right: calc(68px + env(safe-area-inset-right)); } #life { font-size: 1.8rem; } #hud { white-space: nowrap; } } /* landscape phones: one row, so the planet keeps the height */
 #bar { position: relative; display: flex; justify-content: center; gap: 8px; padding: 8px 12px calc(12px + env(safe-area-inset-bottom)); }
 .tile { position: relative; flex: 1 1 0; max-width: 64px; height: 58px; background: var(--bg); display: grid; place-items: center; }
 .tile img { image-rendering: pixelated; max-width: 100%; max-height: 46px; } /* shrink only when a tile is narrower than the icon */

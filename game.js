@@ -1379,7 +1379,7 @@ function updateUI() {
   $('wtime').textContent = S.done ? (best !== undefined ? `healed · best ${clock(best)}` : 'healed') : clock(Math.max(0, last - S.start)) + (best !== undefined ? ` · best ${clock(best)}` : ''); // frozen once healed
   const h = pct(), ns = STAGES.find(st => healOf(S.earned) < st.at); // next milestone
   $('healbar').style.width = h + '%';
-  $('healtxt').textContent = `${h}% terraformed` + (ns ? ` · ${ns.name} at ${ns.at * 100}%` : '');
+  $('healtxt').innerHTML = `<b>${h}%</b> terraformed` + (ns ? ` · ${ns.name} at ${ns.at * 100}%` : ''); // numbers and data.js names only
   $('heal').setAttribute('aria-valuenow', h);
 
   const g = GOALS[S.goal], goal = $('goal');
@@ -1569,8 +1569,8 @@ function renderTal() {
   if (!has(t.id)) { // what this talent would do to your numbers right now
     const r0 = rateOf(), t0 = tapGain();
     S.tal.push(t.id); const r1 = rateOf(), t1 = tapGain(); S.tal.pop();
-    if (r1 !== r0) effect = ` Now: ${fmt(r0)} -> ${fmt(r1)} life/s.`;
-    else if (t1 !== t0) effect = ` Now: taps +${fmt(t0)} -> +${fmt(t1)}.`;
+    if (r1 !== r0) effect = ` Now: ${fmt(r0)} -\u2060> ${fmt(r1)} life/s.`;
+    else if (t1 !== t0) effect = ` Now: taps +${fmt(t0)} -\u2060> +${fmt(t1)}.`;
   }
   $('tdesc').textContent = val(t.desc) + effect;
   buy.setAttribute('aria-disabled', !canTal(t) || S.seeds < 1);
