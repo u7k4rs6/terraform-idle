@@ -55,7 +55,7 @@ const rateOf = (live = true) => SYS.reduce((a, _, s) => a + (S.on[s] ? sysOut(s,
 const pay = (secs, min) => Math.max(min * priceScale(), rateOf(false) * secs); // one-off rewards: secs of base income, at least min (scaled)
 const tapGain = () => tapOf(rateOf()) * (has('spark') ? 3 : 1) * (has('tapecho') ? 1.5 : 1) * (trait().tap || 1) * (S.boon === 'hands' ? 3 : 1); // one tap, before a crit
 const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (has('thrift') ? .9 : 1) * (S.boon === 'bulk' ? .8 : 1) * (trait().price || 1)); // level l -> l+1 of upgrade k
-const unlockCost = s => Math.ceil(SYS[s].unlock * priceScale() * (has('cheap') ? .75 : 1));
+const unlockCost = s => Math.ceil(SYS[s].unlock * UNLOCK_GATE[s] * priceScale() * (has('cheap') ? .75 : 1));
 const rewardOf = g => g.reward * priceScale() * (has('patron') ? 3 : 1) * (trait().reward || 1);
 const unlocked = s => s === 0 || S.on[s - 1];
 const items = []; // life patches on the planet: { u, v (texture coords), born }
@@ -2045,7 +2045,8 @@ function stepEvents(dt) {
 let conNext = 60; // seconds of play until the next offer
 // A contract is plain data { kind, arg, from?, secs, t (seconds left), reward } so it saves and reloads; its kind supplies the rules.
 const CONTRACT_KINDS = { // pick() returns { arg, from?, secs } or null when the kind does not fit the moment
-  unlock: { pick: () => { const s = S.on.indexOf(false); return s > 0 && unlocked(s) ? { arg: s, secs: 180 } : null; }, text: c => `Unlock the ${SYS[c.arg].name}`, done: c => S.on[c.arg] },
+  // unlock: only offered when the next machine is affordable within the time
+  unlock: { pick: () => { const s = S.on.indexOf(false); return s > 0 && unlocked(s) && S.life + rateOf(false) * 120 >= unlockCost(s) ? { arg: s, secs: 180 } : null; }, text: c => `Unlock the ${SYS[c.arg].name}`, done: c => S.on[c.arg] },
   level: { pick: () => { const top = Math.max(...S.L.flat()); return top < MAXL ? { arg: Math.min(MAXL, top + 5), secs: 120 } : null; },
     text: c => `Get any upgrade to Lv ${c.arg}`, done: c => Math.max(...S.L.flat()) >= c.arg },
   combo: { pick: () => ({ arg: 15, secs: 60 }), text: c => `Chain a ${c.arg}-tap combo`, done: c => combo >= c.arg },

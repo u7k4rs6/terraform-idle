@@ -66,6 +66,10 @@ const CATALOG = {
 // Unlock slots 0-2 hang in orbit, 3-5 stand on the ground (see SLOT). Each slot has three machines drawn for its spot:
 // 0 laser/striker/lance, 1 solar/coil/ion, 2 drone/asteroid/pod, 3 rocket/volcano/driver, 4 bio/forge/hydro, 5 core/antimatter/star.
 const TIER = [[100, 3], [1200, 20], [1.5e4, 140], [2e5, 1000], [2.5e6, 7000], [1.5e7, 40000]].map(([unlock, base]) => ({ unlock, base }));
+// Unlocking costs extra (upgrades keep the TIER price): you live with one machine for a while before the next.
+// Steep early, gentle late, so the sixth still arrives before 100%. Greedy-buyer sim, world 1: the 2nd machine comes at
+// ~2.5 min with the 1st at Lv 26/18/13 (was 1.2 min at 17/11/5); a patient buyer waits ~7.5 min; the world takes ~20-27 min (was ~19).
+const UNLOCK_GATE = [1, 6, 4, 2.5, 1.5, 1];
 const LOADOUTS = [ // one per world, no two alike
   ['laser', 'solar', 'drone', 'rocket', 'bio', 'core'],                 // CRIMSON: the originals
   ['striker', 'coil', 'asteroid', 'volcano', 'forge', 'antimatter'],    // ARES: the second generation
@@ -100,15 +104,15 @@ const GOALS = [
   ['Tap the planet 10 times', () => S.taps, 10, 60, -1], // 10 taps (40) + 60 = exactly the first unlock
   [() => `Unlock the ${SYS[0].name}`, () => +S.on[0], 1, 50, 0],
   [() => `Recruit 5 ${SYS[0].unit}s`, () => S.L[0][0], 5, 200, 0],
+  [() => `${SYS[0].ups[1][0]} to Lv 5`, () => S.L[0][1], 5, 1000, 0], // upgrade first: the next machine costs a lot more
   [() => `Unlock the ${SYS[1].name}`, () => +S.on[1], 1, 500, 1],
-  [() => `${SYS[0].ups[1][0]} to Lv 5`, () => S.L[0][1], 5, 1000, 0],
   ['Terraform 25%', () => pct(), 25, 3000, -1],
-  [() => `Unlock the ${SYS[2].name}`, () => +S.on[2], 1, 6000, 2],
   ['Get any upgrade to Lv 20', () => Math.max(...S.L.flat()), 20, 2e4, topSys],
-  [() => `Unlock the ${SYS[3].name}`, () => +S.on[3], 1, 5e4, 3],
+  [() => `Unlock the ${SYS[2].name}`, () => +S.on[2], 1, 6000, 2],
   ['Terraform 50%', () => pct(), 50, 1e5, -1],
-  [() => `Unlock the ${SYS[4].name}`, () => +S.on[4], 1, 1e6, 4],
+  [() => `Unlock the ${SYS[3].name}`, () => +S.on[3], 1, 5e4, 3],
   ['Terraform 75%', () => pct(), 75, 3e6, -1],
+  [() => `Unlock the ${SYS[4].name}`, () => +S.on[4], 1, 1e6, 4],
   [() => `Unlock the ${SYS[5].name}`, () => +S.on[5], 1, 2e7, 5],
   ['Terraform 100%', () => pct(), 100, 0, -1],
 ].map(([text, get, need, reward, go]) => ({ text, get, need, reward, go }));
