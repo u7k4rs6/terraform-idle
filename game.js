@@ -1,7 +1,8 @@
 'use strict';
 
-// Muted slate night, white line-art, soft pink accents.
-const C = { bg: '#2b3047', deep: '#1f2333', line: '#e9ecf5', dim: '#59607f', dot: '#6f79a3', soft: '#8f99c4', pink: '#e98aa3', sil: '#1c2030', sun: '#ffe08a', zap: '#bfe6ff', lava: '#ff8a3d', gas: '#c9d6b8', plasma: '#c58cff', water: '#7fd3ff' };
+// The palette. art: the machines' shading (line, detail, fill ramps); accL/accD: their accent pair.
+const C = { bg: '#1a2030', deep: '#111622', line: '#f2ede2', dim: '#4b5266', dot: '#5f6880', soft: '#9aa2b6', acc: '#ffb547', accL: '#ffc76b', accD: '#b3741f', sil: '#0e121c',
+  art: { line: ['#e8e6e0',  '#b5b4b8',  '#757a8c'], det: ['#545a6c',  '#666c80'], fill: ['#434a5c',  '#333948',  '#262b38',  '#1b1f2a'] }, sun: '#ffe08a', zap: '#bfe6ff', lava: '#ff8a3d', gas: '#c9d6b8', plasma: '#c58cff', water: '#7fd3ff' };
 
 const priceScale = () => PRICE_GROWTH ** S.world; // prices, taps and flat rewards grow with the warp boost
 const ucost = (s, k, l) => Math.ceil(SYS[s].unlock * UPM[k][0] * UPM[k][1] ** l * priceScale());
@@ -153,11 +154,12 @@ function shadow(src, dotted) {
 }
 // Re-shade clean line-art into the planet's gritty look: dithered light (light(x, y) = 1 bright .. 0 dark),
 // darker lower/right edges and pixel noise. Edits the canvas in place.
+const MK = '#e98aa3'; // the accent the machine art is drawn with; grit() swaps it for the palette's pair
 function grit(src, seed, light) {
   const w = src.width, h = src.height, g = src.getContext('2d', { willReadFrequently: true }), im = g.getImageData(0, 0, w, h), d = im.data;
   const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 0;
-  const T = { lineL: rgb('#dfe3f0'), lineM: rgb('#aab2d0'), lineD: rgb('#6d769c'), detA: rgb('#525a7a'), detB: rgb('#646c8e'),
-    fillL: rgb('#454c6c'), fillM: rgb('#343a56'), fillD: rgb('#262a40'), fillX: rgb('#1b1e2e'), pinkL: rgb('#f0a3b7'), pinkD: rgb('#a8566f') };
+  const [lineL, lineM, lineD] = C.art.line.map(rgb), [detA, detB] = C.art.det.map(rgb), [fillL, fillM, fillD, fillX] = C.art.fill.map(rgb);
+  const T = { lineL, lineM, lineD, detA, detB, fillL, fillM, fillD, fillX, pinkL: rgb(C.accL), pinkD: rgb(C.accD) };
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = (y * w + x) * 4;
     if (!d[i + 3]) continue;
@@ -165,7 +167,7 @@ function grit(src, seed, light) {
     const v = L + (n - .5) * .5; // light with per-pixel noise
     const blot = hash(x >> 2, y >> 2, seed + 1) * .55 + hash(x >> 1, y >> 1, seed + 2) * .3; // low-frequency mottling, like the planet
     const f = L * .75 + blot - .45 + (n - .5) * .25;
-    const col = r > 200 && gg < 170 ? (v > th ? T.pinkL : T.pinkD) // pink accents
+    const col = r > 200 && gg < 170 ? (v > th ? T.pinkL : T.pinkD) // accents
       : r + gg + b > 600 ? (!on(x + 1, y) || !on(x, y + 1) ? (v > .75 ? T.lineM : T.lineD) // lit edges: bright toward the sun, dim on the shadow side
         : v > th + .15 ? T.lineL : v > th - .3 ? T.lineM : T.lineD)
       : b > 110 && r + gg + b > 280 ? (n < .5 ? T.detA : T.detB) // dim detail lines
@@ -191,11 +193,11 @@ const ART = {
     r.poly([[-8, -5], [-14, -3], [-14, 3], [-8, 5]]); // tapered front
     r.rect(-8, -6, 24, 12); // main body
     r.rect(16, -7, 3, 14); // rear cap
-    r.rect(-5, -3, 18, 6); for (const x of [-3, 2, 7]) r.rect(x, -1, 3, 2, C.pink); // slot panel
+    r.rect(-5, -3, 18, 6); for (const x of [-3, 2, 7]) r.rect(x, -1, 3, 2, MK); // slot panel
     for (let x = -4; x < 14; x += 4) r.seg(x, -6, x + 2, -4); // vent ribs
     r.rect(-13, -2, 3, 4); // nose panel
     r.seg(-14, -1, -23, -1); r.seg(-14, 1, -23, 1); r.seg(-18, -2, -18, 2); // needle nozzle
-    r.dot(-24, 0, C.pink); r.dot(-25, 0, C.pink);
+    r.dot(-24, 0, MK); r.dot(-25, 0, MK);
   }),
   // satellite: monitor head with a little face, brick-grid panels, striped body, dangling cables
   solar: art(56, 32, p => {
@@ -205,7 +207,7 @@ const ART = {
       for (let k = 2; k < 14; k += 3) p.line(x0 + k, 8, x0 + k, 9);
     }
     p.line(15, 6, 22, 6); p.line(34, 6, 40, 6); // arms
-    p.box(22, 0, 12, 10); p.box(24, 2, 8, 6); p.dot(26, 4, C.pink); p.dot(29, 4, C.pink); p.line(26, 6, 29, 6, C.dim); // monitor head
+    p.box(22, 0, 12, 10); p.box(24, 2, 8, 6); p.dot(26, 4, MK); p.dot(29, 4, MK); p.line(26, 6, 29, 6, C.dim); // monitor head
     p.box(23, 9, 10, 14); for (let x = 25; x < 32; x += 2) p.line(x, 10, x, 21, C.dim); // striped body
     [4, 7, 3, 8, 5].forEach((len, k) => p.line(24 + k * 2, 23, 24 + k * 2, 23 + len)); // dangling cables
   }),
@@ -220,7 +222,7 @@ const ART = {
     for (const [hx, hy, hr] of [[7, 28, 2], [13, 30, 1], [19, 27, 2], [26, 30, 1], [32, 28, 2], [38, 30, 1]]) p.disc(hx, hy, hr);
     p.line(12, 22, 12, 23); p.line(24, 22, 24, 23); // struts
     p.box(9, 8, 17, 15); p.line(10, 9, 24, 21, C.dim); p.line(24, 9, 10, 21, C.dim); // braced frame
-    p.box(13, 12, 9, 7); p.fill(15, 14, 5, 3, C.pink); // core
+    p.box(13, 12, 9, 7); p.fill(15, 14, 5, 3, MK); // core
     p.box(12, 3, 6, 6); p.line(15, 0, 15, 2); // vent stack
     p.disc(32, 14, 5); p.disc(32, 14, 2);
     for (let i = 0; i < 16; i += 2) { const a = i / 16 * 2 * Math.PI; p.dot(32 + Math.cos(a) * 7, 14 + Math.sin(a) * 7); } // dotted gear rim
@@ -232,21 +234,21 @@ const ART = {
     for (let y = 2; y <= 8; y++) { const hw = (y - 2) >> 1; p.fill(16 - hw, y, hw * 2 + 1, 1); } // nose fill
     p.line(16, 2, 13, 8); p.line(16, 2, 19, 8); // nose
     p.fill(14, 8, 5, 18); p.line(13, 8, 13, 25); p.line(19, 8, 19, 25); p.line(13, 25, 19, 25); // body
-    p.disc(16, 13, 2, C.pink); p.line(14, 19, 18, 19, C.dim);
+    p.disc(16, 13, 2, MK); p.line(14, 19, 18, 19, C.dim);
     p.line(13, 20, 10, 25); p.line(19, 20, 22, 25); p.line(10, 25, 13, 25); p.line(19, 25, 22, 25); // fins
-    p.fill(15, 26, 3, 2, C.pink); // exhaust glow
+    p.fill(15, 26, 3, 2, MK); // exhaust glow
     p.box(0, 29, 30, 7); p.line(3, 32, 26, 32, C.dim); // launch pad
   }),
   bio: art(32, 26, p => {
     p.disc(16, 17, 13, C.bg, true); // greenhouse dome
     for (const x of [9, 16, 23]) p.line(x, 17 - Math.round(Math.sqrt(169 - (x - 16) ** 2)) + 1, x, 16, C.dim); // ribs
-    for (const x of [12, 20]) { p.line(x, 16, x, 12, C.pink); p.dot(x - 1, 13, C.pink); p.dot(x + 1, 14, C.pink); } // sprouts
-    p.box(1, 17, 30, 9); p.box(4, 19, 4, 4); p.box(24, 19, 4, 4); p.fill(11, 20, 10, 2, C.pink); // base
+    for (const x of [12, 20]) { p.line(x, 16, x, 12, MK); p.dot(x - 1, 13, MK); p.dot(x + 1, 14, MK); } // sprouts
+    p.box(1, 17, 30, 9); p.box(4, 19, 4, 4); p.box(24, 19, 4, 4); p.fill(11, 20, 10, 2, MK); // base
   }),
   core: art(32, 30, p => {
     p.line(10, 21, 7, 26); p.line(22, 21, 25, 26); // legs
     p.box(4, 25, 24, 5); p.line(7, 27, 24, 27, C.dim); // base
-    p.disc(16, 12, 10); p.disc(16, 12, 4, C.pink); // reactor sphere + core
+    p.disc(16, 12, 10); p.disc(16, 12, 4, MK); // reactor sphere + core
     p.ring(16, 12, 15, 3, 0, Math.PI); // orbit ring, front half
     p.ring(16, 12, 15, 3, Math.PI, 2 * Math.PI, C.dim);
   }),
@@ -257,116 +259,117 @@ const ART = {
     r.rect(8, -6, 10, 12); // breech
     r.rect(10, -9, 6, 3); for (const x of [11, 13, 15]) r.seg(x, -8, x, -7, C.dim); // rod magazine
     r.rect(-22, -3, 30, 6); r.seg(-21, 0, 7, 0, C.dim); // twin rails on a solid body
-    for (const x of [-18, -12, -6, 0]) r.rect(x, -4, 2, 8, C.pink); // magnetic coils
+    for (const x of [-18, -12, -6, 0]) r.rect(x, -4, 2, 8, MK); // magnetic coils
     r.seg(-24, -3, -24, 3); r.dot(-26, 0, C.line); // muzzle ring, rod tip
     r.seg(18, -2, 21, -2); r.seg(18, 2, 21, 2); // thrusters
   }),
   // tesla satellite: winding rings narrowing up to a charged sphere, side orbs, emitter prong pointing down
   coil: art(48, 40, p => {
     p.line(14, 30, 6, 30); p.line(34, 30, 42, 30); p.disc(4, 30, 2); p.disc(44, 30, 2); // arms and side orbs
-    p.box(15, 26, 18, 8); p.line(17, 29, 30, 29, C.dim); p.fill(19, 31, 10, 1, C.pink); // base
+    p.box(15, 26, 18, 8); p.line(17, 29, 30, 29, C.dim); p.fill(19, 31, 10, 1, MK); // base
     p.poly([[15, 25], [33, 25], [29, 13], [19, 13]]); // solid cone behind the windings
     p.line(24, 8, 24, 26, C.dim); // coil core
     for (const [y, rx] of [[23, 9], [19, 7], [15, 5]]) p.ring(24, y, rx, 2); // windings
-    p.disc(24, 7, 5); p.disc(24, 7, 2, C.pink); // charged sphere
-    for (const [x, y] of [[16, 3], [33, 4], [30, 0], [17, 10]]) p.dot(x, y, C.pink); // sparks
-    p.line(24, 34, 24, 38); p.dot(24, 39, C.pink); // emitter prong
+    p.disc(24, 7, 5); p.disc(24, 7, 2, MK); // charged sphere
+    for (const [x, y] of [[16, 3], [33, 4], [30, 0], [17, 10]]) p.dot(x, y, MK); // sparks
+    p.line(24, 34, 24, 38); p.dot(24, 39, MK); // emitter prong
   }),
   // captured asteroid: cratered rock, drill rig biting into it, crane, ore hopper and a chute toward the planet
   asteroid: art(56, 36, p => {
     p.poly([[6, 14], [12, 6], [22, 4], [31, 8], [35, 17], [31, 27], [20, 31], [9, 28], [4, 21]]);
     for (const [x, y, rx, ry] of [[15, 13, 3, 2], [24, 22, 4, 3], [12, 23, 2, 1]]) p.ring(x, y, rx, ry, 0, 2 * Math.PI, C.dim);
-    p.box(26, 0, 12, 7); p.fill(28, 2, 3, 2, C.pink); // rig
+    p.box(26, 0, 12, 7); p.fill(28, 2, 3, 2, MK); // rig
     p.line(30, 7, 32, 12); p.line(34, 7, 32, 12); // drill bit
     p.line(37, 3, 46, 3); p.line(46, 3, 46, 8); // crane
     p.box(33, 24, 9, 5); // ore hopper
-    p.line(42, 27, 52, 33); p.line(42, 29, 51, 34); p.dot(53, 34, C.pink); // chute
+    p.line(42, 27, 52, 33); p.line(42, 29, 51, 34); p.dot(53, 34, MK); // chute
     p.dot(47, 15); p.fill(49, 19, 2, 2, C.line); // drifting ore
   }),
   // volcano with an igniter clamp over its glowing crater, lava runs and rock strata
   volcano: art(34, 32, p => {
     p.poly([[1, 31], [12, 9], [22, 9], [33, 31]]);
     p.line(7, 22, 27, 22, C.dim); p.line(4, 27, 30, 27, C.dim); // strata
-    p.fill(13, 9, 9, 2, C.pink); p.line(15, 11, 13, 17, C.pink); p.line(20, 11, 22, 15, C.pink); // crater and lava runs
+    p.fill(13, 9, 9, 2, MK); p.line(15, 11, 13, 17, MK); p.line(20, 11, 22, 15, MK); // crater and lava runs
     p.box(10, 5, 15, 4); // igniter clamp
-    p.line(12, 5, 12, 1); p.line(22, 5, 22, 1); p.line(12, 1, 22, 1); p.dot(17, 0, C.pink); // frame and beacon
+    p.line(12, 5, 12, 1); p.line(22, 5, 22, 1); p.line(12, 1, 22, 1); p.dot(17, 0, MK); // frame and beacon
   }),
   // factory hall with three smokestacks and glowing furnace windows
   forge: art(34, 34, p => {
     p.box(4, 4, 6, 17); p.box(13, 9, 5, 12); p.box(22, 1, 7, 20); // stacks
-    p.fill(5, 7, 4, 1, C.pink); p.fill(23, 4, 5, 1, C.pink); // warning bands
+    p.fill(5, 7, 4, 1, MK); p.fill(23, 4, 5, 1, MK); // warning bands
     p.box(1, 20, 32, 14); // hall
-    for (let x = 4; x < 30; x += 7) p.fill(x, 24, 4, 3, C.pink); // furnace windows
+    for (let x = 4; x < 30; x += 7) p.fill(x, 24, 4, 3, MK); // furnace windows
     p.line(2, 30, 31, 30, C.dim);
   }),
   // antimatter orb floating in a magnetic field between two coiled pylons
   antimatter: art(34, 34, p => {
     p.box(1, 28, 32, 6); p.line(4, 31, 29, 31, C.dim); // base
     p.box(3, 6, 5, 23); p.box(26, 6, 5, 23); p.box(2, 3, 7, 4); p.box(25, 3, 7, 4); // pylons and caps
-    for (const y of [11, 16, 21, 25]) { p.line(4, y, 6, y, C.pink); p.line(27, y, 29, y, C.pink); } // coils
+    for (const y of [11, 16, 21, 25]) { p.line(4, y, 6, y, MK); p.line(27, y, 29, y, MK); } // coils
     p.ring(17, 16, 12, 3, Math.PI, 2 * Math.PI, C.dim); // field ring, back half
-    p.disc(17, 16, 6); p.disc(17, 16, 3, C.pink); // orb
+    p.disc(17, 16, 6); p.disc(17, 16, 3, MK); // orb
     p.ring(17, 16, 12, 3, 0, Math.PI); // field ring, front half
   }),
   // plasma lance angled down-left: power housing with a glowing cell, a barrel ringed with focusing coils, a crystal tip
   lance: art(64, 42, p => {
     const r = p.rot(34, 22, -.5, 1.3);
     r.seg(20, -4, 24, -7); r.seg(20, 4, 24, 7); // fins
-    r.rect(8, -6, 12, 12); r.rect(11, -9, 6, 3, C.pink); // housing and its cell
+    r.rect(8, -6, 12, 12); r.rect(11, -9, 6, 3, MK); // housing and its cell
     r.rect(-20, -2, 28, 4); r.seg(-19, 0, 7, 0, C.dim); // barrel
-    for (const x of [-16, -9, -2, 5]) r.rect(x, -4, 2, 8, C.pink); // focusing coils
-    r.poly([[-20, -3], [-27, 0], [-20, 3]], C.pink); r.dot(-28, 0, C.line); // crystal tip
+    for (const x of [-16, -9, -2, 5]) r.rect(x, -4, 2, 8, MK); // focusing coils
+    r.poly([[-20, -3], [-27, 0], [-20, 3]], MK); r.dot(-28, 0, C.line); // crystal tip
   }),
   // ion cannon satellite: two solar wings, a body with a glowing core, a dish facing down at the planet
   ion: art(52, 34, p => {
     for (const x0 of [0, 40]) { p.box(x0, 6, 12, 7); for (let k = 3; k < 11; k += 3) p.line(x0 + k, 7, x0 + k, 11, C.dim); }
     p.line(12, 9, 18, 9); p.line(34, 9, 40, 9); // arms
-    p.box(18, 1, 16, 15); p.fill(22, 4, 8, 4, C.pink); p.line(20, 11, 31, 11, C.dim); // body and core
+    p.box(18, 1, 16, 15); p.fill(22, 4, 8, 4, MK); p.line(20, 11, 31, 11, C.dim); // body and core
     p.poly([[15, 16], [37, 16], [32, 24], [20, 24]]); p.line(19, 18, 33, 18, C.dim); // dish
-    p.line(26, 24, 26, 30); p.dot(26, 31, C.pink); p.dot(26, 32, C.pink); // emitter
+    p.line(26, 24, 26, 30); p.dot(26, 31, MK); p.dot(26, 32, MK); // emitter
   }),
-  // seed missile pod: a hovering launcher, six tubes with pink warheads, an antenna, two thrusters
+  // seed missile pod: a hovering launcher, six tubes with accent warheads, an antenna, two thrusters
   pod: art(44, 34, p => {
     p.box(5, 6, 31, 18); p.line(6, 15, 34, 15, C.dim);
-    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { p.box(8 + i * 9, 8 + j * 8, 7, 5); p.fill(10 + i * 9, 10 + j * 8, 3, 1, C.pink); }
-    p.line(34, 6, 40, 0); p.dot(40, 0, C.pink); p.dot(41, 1, C.pink); // antenna
-    for (const x of [9, 26]) { p.box(x, 24, 7, 4); p.fill(x + 2, 28, 3, 3, C.pink); } // thrusters
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { p.box(8 + i * 9, 8 + j * 8, 7, 5); p.fill(10 + i * 9, 10 + j * 8, 3, 1, MK); }
+    p.line(34, 6, 40, 0); p.dot(40, 0, MK); p.dot(41, 1, MK); // antenna
+    for (const x of [9, 26]) { p.box(x, 24, 7, 4); p.fill(x + 2, 28, 3, 3, MK); } // thrusters
   }),
   // mass driver: a magnetic rail ramp aimed up at the planet, coils along it, a capsule waiting at the top
   driver: art(34, 34, p => {
     p.box(0, 28, 34, 6); p.line(3, 31, 30, 31, C.dim); // base
     p.line(22, 12, 24, 28); p.line(14, 20, 15, 28); // struts
     p.poly([[3, 28], [25, 6], [30, 9], [10, 28]]); // rail
-    for (let k = 0; k < 4; k++) p.fill(9 + k * 5, 22 - k * 5, 3, 2, C.pink); // coils
-    p.box(25, 2, 6, 5); p.dot(27, 4, C.pink); // capsule
+    for (let k = 0; k < 4; k++) p.fill(9 + k * 5, 22 - k * 5, 3, 2, MK); // coils
+    p.box(25, 2, 6, 5); p.dot(27, 4, MK); // capsule
   }),
   // hydro cannon: a water tower on legs, a pressure gauge, a nozzle aimed up-right
   hydro: art(34, 32, p => {
     p.line(7, 20, 4, 28); p.line(17, 20, 20, 28); p.line(5, 25, 19, 25, C.dim); // legs
     p.box(0, 28, 26, 4); // base
-    p.disc(12, 12, 9); p.line(4, 14, 20, 14, C.dim); p.disc(12, 9, 2, C.pink); // tank, waterline, gauge
-    p.line(19, 8, 28, 2); p.line(20, 10, 29, 4); p.box(27, 0, 6, 5); p.dot(30, 2, C.pink); // nozzle
+    p.disc(12, 12, 9); p.line(4, 14, 20, 14, C.dim); p.disc(12, 9, 2, MK); // tank, waterline, gauge
+    p.line(19, 8, 28, 2); p.line(20, 10, 29, 4); p.box(27, 0, 6, 5); p.dot(30, 2, MK); // nozzle
   }),
   // star forge: a containment frame holding a tiny star, ring arcs around it
   star: art(34, 32, p => {
     p.box(2, 26, 30, 6); p.line(5, 29, 28, 29, C.dim); // base
     p.line(6, 26, 9, 5); p.line(28, 26, 25, 5); p.box(8, 2, 18, 4); // frame
     p.ring(17, 15, 13, 4, Math.PI, 2 * Math.PI, C.dim); // ring, back half
-    p.disc(17, 15, 6, C.pink); p.disc(17, 15, 3, C.line); // the star
-    for (const [x, y] of [[17, 7], [17, 23], [9, 15], [25, 15]]) p.dot(x, y, C.pink); // rays
+    p.disc(17, 15, 6, MK); p.disc(17, 15, 3, C.line); // the star
+    for (const [x, y] of [[17, 7], [17, 23], [9, 15], [25, 15]]) p.dot(x, y, MK); // rays
     p.ring(17, 15, 13, 4, 0, Math.PI); // ring, front half
   }),
 };
-// Marks: a system's look grows with its best upgrade (Lv 10 / 25 / 50): the pink accents turn cyan, gold, then white (Mark IV also glows).
+// Marks: a system's look grows with its best upgrade (Lv 10 / 25 / 50): the amber accents turn cyan, violet, then white (Mark IV also glows).
 const MARK_AT = [10, 25, 50], MARK = ['I', 'II', 'III', 'IV'];
-const MARKS = [['#8fe3ff', '#4a90b0'], ['#ffe08a', '#b08a3a'], ['#ffffff', '#9aa3c4']].map(m => m.map(rgb));
+const MARKS = [['#8fe3ff', '#4a90b0'], ['#d9a6ff', '#8452b0'], ['#ffffff', '#9aa3c4']].map(m => m.map(rgb));
 const markOf = s => MARK_AT.filter(n => Math.max(...S.L[s]) >= n).length;
-function recolour(src, [light, dark]) { // grit()'s pink pair -> this mark's pair
+function recolour(src, [light, dark]) { // grit()'s accent pair -> this mark's pair
   const c = mk(src.width, src.height), g = c.getContext('2d');
   g.drawImage(src, 0, 0);
   const im = g.getImageData(0, 0, c.width, c.height), d = im.data;
+  const [al, ad] = [C.accL, C.accD].map(rgb);
   for (let i = 0; i < d.length; i += 4) {
-    const k = d[i] === 240 && d[i + 1] === 163 ? light : d[i] === 168 && d[i + 1] === 86 ? dark : null;
+    const k = d[i] === al[0] && d[i + 1] === al[1] && d[i + 2] === al[2] ? light : d[i] === ad[0] && d[i + 1] === ad[1] && d[i + 2] === ad[2] ? dark : null;
     if (k) { d[i] = k[0]; d[i + 1] = k[1]; d[i + 2] = k[2]; }
   }
   g.putImageData(im, 0, 0);
@@ -378,9 +381,9 @@ const LOOKS = Object.fromEntries(Object.entries(ART).map(([id, a], i) => {
 }));
 const look = s => LOOKS[SYS[s].id]; // the sprites of whatever system holds slot s
 
-// Small sprites drawn as-is: w = line, n = fill, p = pink.
+// Small sprites drawn as-is: w = line, n = fill, p = accent.
 function tiny(rows) {
-  const c = mk(rows[0].length, rows.length), g = c.getContext('2d'), col = { w: C.line, n: C.bg, p: C.pink };
+  const c = mk(rows[0].length, rows.length), g = c.getContext('2d'), col = { w: C.line, n: C.bg, p: C.acc };
   rows.forEach((r, y) => [...r].forEach((ch, x) => { if (col[ch]) { g.fillStyle = col[ch]; g.fillRect(x, y, 1, 1); } }));
   return c;
 }
@@ -395,7 +398,7 @@ const ICON = `<img class="ico" src="${T.energy.toDataURL()}" alt="life">`;
 const TILE = Object.fromEntries(Object.entries(LOOKS).map(([id, l]) => [id, { lit: l.lit.toDataURL(), sil: l.sil.toDataURL(), next: l.next.toDataURL(), marks: l.marks.map(c => c.toDataURL()) }]));
 
 // 3x5 pixel font for numbers on the canvas (smooth canvas text would blur when scaled).
-const GLYPH = { 0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001', 5: '111100111001111', 6: '111100111101111', 7: '111001001001001', 8: '111101111101111', 9: '111101111001111',
+const GLYPH = { L: '100100100100111', v: '000000101101010', 0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001', 5: '111100111001111', 6: '111100111101111', 7: '111001001001001', 8: '111101111101111', 9: '111101111001111',
   '.': '000000000000010', '/': '001001010100100', '+': '000010111010000', k: '100101110101101', m: '000111111101101', b: '100100111101111', t: '010111010010011',
   q: '000111101111001', x: '000101010101000', e: '111101111100111' };
 
@@ -558,7 +561,7 @@ const SLOT = [
 for (const sl of SLOT) if (!sl.ground) { const r = sl.a * Math.PI / 180; sl.x = Math.cos(r) * ORBIT; sl.y = Math.sin(r) * ORBIT; }
 const HIT = 20; // touch radius in scene pixels (40+ CSS px), a bit larger than the sprites
 let K, PX, W, H, R0, R, CX, CY, GY, TOP, SIDE, FY = 1, layoutH = 0, city = [], cityCv, cityN = -1, ridge = [];
-const hudH = () => $('top').offsetHeight + $('side').offsetHeight; // the layout depends on these heights
+const hudH = () => $('top').offsetHeight + $('dock').offsetHeight; // the layout depends on these heights
 function resize() {
   if (!innerWidth || !innerHeight) return; // hidden iframe / minimised: nothing to lay out (0-size canvases would throw)
   // about 320 art pixels across the short side, each a whole number (K) of device pixels; PX = CSS pixels per art pixel
@@ -581,13 +584,10 @@ function resize() {
 }
 // Planet sits low behind the ground line; the systems stand and hang around it.
 function layout() {
-  const top = $('top').getBoundingClientRect().bottom / PX, bar = $('bar').offsetHeight / PX;
-  $('side').style.top = top * PX + 12 + 'px';
-  const sr = $('side').getBoundingClientRect();
-  $('toast').style.top = (innerWidth < 640 ? sr.bottom + 10 : top * PX + 12) + 'px'; // phones: under the stat boxes, full width
-  $('gear').style.height = $('goal').offsetHeight + 'px'; // the corner gear lines up with the goal bar
-  $('contract').style.top = top * PX + 12 + 'px'; // a right-hand column level with the stat boxes: clear of the goal bar and the systems
-  TOP = top + 4; SIDE = { r: sr.right / PX, b: sr.bottom / PX };
+  const top = $('top').getBoundingClientRect().bottom / PX, bar = $('dock').offsetHeight / PX;
+  $('toast').style.top = top * PX + 10 + 'px'; // under the goal bar
+  $('contract').style.top = top * PX + 10 + 'px'; // right edge, clear of the goal bar and the systems
+  TOP = top + 4; SIDE = { r: 0, b: 0 }; // nothing sits beside the scene any more (the HUD is above it and below it)
   GY = Math.round(H - bar - 14); // ground line
   // planet as big as fits: the outer ground systems (GX, wider than the ring's cos 30° x ORBIT) plus a sprite half-width across,
   // the top system (ORBIT + sprite + label) above a centre that sits .45R over the ground.
@@ -631,7 +631,16 @@ const muzzle = s => { const [x, y] = sysPos(s, last), [dx, dy] = MUZZLE[SYS[s].i
 
 // Dot-grid stars like a printed star chart.
 const stars = []; let starsIn = []; // starsIn: the ones on this screen, refreshed by layout()
-for (let y = 3; y < 1000; y += 9) for (let x = 3; x < 2000; x += 9) if ((x * 7 + y * 13) % 5 < 2) stars.push([x + (x * y) % 4, y + (x + y) % 3, (x * 31 + y) % 7]);
+{ let sd = 7; const rnd = () => (sd = sd * 16807 % 2147483647) / 2147483647; // scattered, the same sky every time
+  for (let n = 0; n < 6000; n++) stars.push([rnd() * 2000 | 0, rnd() * 1000 | 0, rnd() < .03 ? 6 : rnd() * 6 | 0]); } // k: 0-5 faint to soft, 6 bright
+function drawStars(t) { // faint ones twinkle, bright ones glint with a small cross
+  const tw = calm() ? 0 : t;
+  for (const [x, y, k] of starsIn) {
+    if (k < 6) { if (k > 1 || Math.sin(tw * 1.3 + x * 7.1 + y) > -.3) P.dot(x, y, k > 3 ? C.soft : C.dot); continue; }
+    P.dot(x, y, C.line);
+    if (Math.sin(tw * .9 + x) > -.2) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) P.dot(x + dx, y + dy, C.dot);
+  }
+}
 const parts = [], floats = [], shots = [], beams = [], pulses = [];
 const bots = Array.from({ length: 40 }, (_, k) => [(k * 97.3) % TW, 18 + (k * 53.7) % (TH - 36)]); // crew walking the surface
 let off = 0, shake = 0, flash = 0, last = 0, zoom = 1, stage = 0, sel = -1;
@@ -687,7 +696,7 @@ function fire(s, real) {
     setTimeout(() => { if (S.world === w0) land(s, tx, ty, real); }, 150); // skip if a warp started a new world meanwhile
     return;
   }
-  if (shot === 'beam') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.pink, end: true }); return land(s, tx, ty, real); }
+  if (shot === 'beam') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.acc, end: true }); return land(s, tx, ty, real); }
   if (shot === 'pulse') { pulses.push({ r: R * .2, life: 1 }); return land(s, tx, ty, real); }
   if (shot === 'arc') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.zap, end: true, fade: 4, zig: true }); return land(s, tx, ty, real); }
   if (shot === 'plasma') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.plasma, w: 3, end: true, fade: 3 }); return land(s, tx, ty, real); }
@@ -718,12 +727,12 @@ const cadence = s => Math.max(.6, 4 / Math.sqrt(1 + S.L[s][0]));
 function land(s, x, y, real, quiet) { // quiet: extra chunks of a spray, no pop-up
   const shot = SYS[s].shot, big = ['rocket', 'pulse', 'rod', 'lava', 'annihilate', 'capsule', 'flare', 'ion'].includes(shot);
   const tint = { lava: [C.lava, C.sun, C.line], arc: [C.zap, C.line], ion: [C.zap, C.line], plasma: [C.plasma, C.line], water: [C.water, C.line], flare: [C.sun, C.line] }[shot];
-  burst(x, y, tint || [C.line, C.pink, C.soft], real ? 24 : quiet ? 3 : 7, big ? 60 : 35);
+  burst(x, y, tint || [C.line, C.acc, C.soft], real ? 24 : quiet ? 3 : 7, big ? 60 : 35);
   if (big) { shake = Math.max(shake, real ? .7 : .2); play('boom', real ? 1 : .3); }
   if (quiet) return;
   if (real) { const [u, v] = texPos(x, y); items.push({ u, v, born: last }); if (items.length > 300) items.splice(0, items.length - 150); }
   // damage pop-up: what this system earns per shot, so the numbers match the real income
-  floats.push({ x, y: y - 8, text: '+' + fmt(sysOut(s) * cadence(s) * (ev?.id === 'flare' ? .5 : 1)), life: 1.4, col: '#ffd6e0' }); // light pink: readable on any planet; a flare fires twice as often
+  floats.push({ x, y: y - 8, text: '+' + fmt(sysOut(s) * cadence(s) * (ev?.id === 'flare' ? .5 : 1)), life: 1.4, col: '#ffe2b0' }); // light pink: readable on any planet; a flare fires twice as often
   if (floats.length > 14) floats.shift(); // keep the sky readable
 }
 
@@ -824,7 +833,7 @@ function drawColony(t, heal) {
     grit(cityCv, 3, (x, y) => .4 - Math.max(0, Math.min(.3, (y - (GY - 20)) / 60))); // dim: outlines stay grey, darker toward the ground
   }
   ctx.drawImage(cityCv, 0, 0);
-  for (const [x, y] of lights) if (Math.sin(t * 2 + x * .7) > 0) P.dot(x, y, C.pink);
+  for (const [x, y] of lights) if (Math.sin(t * 2 + x * .7) > 0) P.dot(x, y, C.acc);
   const rx = (t * 9) % (W + 20) - 10;
   blit(ROVER, rx, GY - 2);
   if (Math.random() < .15) parts.push({ x: rx - 4, y: GY - 1, vx: -4, vy: -3, life: .5, color: C.dim });
@@ -866,17 +875,17 @@ function drawSystem(s, t) {
   if (m === 3) { ctx.globalAlpha = .25 + .15 * (calm() ? 1 : Math.sin(t * 3)); P.ring(x, y, img.width / 2 + 4, img.height / 2 + 4, 0, 2 * Math.PI, C.sun); ctx.globalAlpha = 1; } // Mark IV halo
   blit(img, x, y);
 }
-// Labels, price tags, pink dots and selection brackets go on top of every system, so nothing hides them.
+// Labels, price tags, accent dots and selection brackets go on top of every system, so nothing hides them.
 function drawMarks(s, t) {
   const on = S.on[s], img = look(s).lit;
   const [x, y] = sysPos(s, t), w = img.width, h = img.height, x0 = Math.round(x - w / 2), y0 = Math.round(y - h / 2);
-  if (on) text(`${S.L[s][0] + S.L[s][1] + S.L[s][2]}/${MAXL * 3}`, x, y0 - 8);
+  if (on) text(`Lv${S.L[s][0] + S.L[s][1] + S.L[s][2]}`, x, y0 - 8); // total level
   else if (unlocked(s)) { // price tag: energy icon + amount, kept on screen as one unit
     const label = fmt(unlockCost(s)), lw = textW(label), total = 9 + lw, left = Math.max(1, Math.min(W - total - 2, Math.round(x - total / 2)));
     ctx.drawImage(T.energy, left, y0 - 10);
     text(label, left + 9 + lw / 2, y0 - 8, C.soft);
   }
-  if (canAct(s)) P.fill(x0 + w + 1, y0 - 4, 3, 3, C.pink);
+  if (canAct(s)) P.fill(x0 + w + 1, y0 - 4, 3, 3, C.acc);
   if (on) for (let k = 0; k < markOf(s); k++) P.fill(x0 + w + 1, y0 + 2 + k * 4, 3, 3, C.sun); // mark pips down the right side
   if (sel === s) { // blinking selection brackets
     const col = calm() || Math.sin(t * 6) > 0 ? C.line : C.soft, l = x0 - 4, r = x0 + w + 3, tp = y0 - 4, bt = y0 + h + 3;
@@ -886,7 +895,7 @@ function drawMarks(s, t) {
 
 function draw(t, heal) {
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-  for (const [x, y, k] of starsIn) if (k || Math.sin(t * 2 + x) > -.5) P.dot(x, y, k > 4 ? C.soft : C.dot);
+  drawStars(t);
   // atmosphere: the world's dead glow fading to its alive glow (colour stepped so the dithered ring is rarely rebuilt)
   const { dg, ag } = world(), c = ev?.id === 'flare' ? '255,224,136' : dg.map((d, k) => Math.round(d + (ag[k] - d) * heal) & ~7).join(','); // a flare lights the whole atmosphere gold
   const halo = haloRing(c), hs = Math.round(halo.width * R / Math.round(R0)); // hs = halo size at the current (zoomed) radius
@@ -909,7 +918,7 @@ function draw(t, heal) {
   drawLife(t, heal);
   if (rk) P.ring(CX, CY, rr, rr * .145, 0, Math.PI);
   if (mo && front) drawMoon(...moon, mo);
-  for (const p of pulses) { ctx.globalAlpha = p.life; P.ring(p.x ?? CX, p.y ?? CY, p.r, p.r, 0, 2 * Math.PI, p.col || C.pink); } // planet-wide or at an impact
+  for (const p of pulses) { ctx.globalAlpha = p.life; P.ring(p.x ?? CX, p.y ?? CY, p.r, p.r, 0, 2 * Math.PI, p.col || C.acc); } // planet-wide or at an impact
   ctx.globalAlpha = 1;
 
   P.fill(0, GY, W, H - GY, C.deep); P.fill(0, GY, W, 1, C.line); // ground
@@ -922,13 +931,13 @@ function draw(t, heal) {
     const bend = s.curve ? lift * s.curve / len : 0; // missiles curve off the straight line and back
     const x = s.sx + (s.tx - s.sx) * k - (s.ty - s.sy) * bend;
     const y = s.sy + (s.ty - s.sy) * k + (s.tx - s.sx) * bend - lift * ({ lava: 28, capsule: 40, water: 22 }[shot] || 0); // lobbed shots arc up first
-    if (shot === 'rocket') { blit(T.missile, x, y); parts.push({ x, y, vx: (Math.random() - .5) * 6, vy: (Math.random() - .5) * 6, life: .5, color: Math.random() < .5 ? C.pink : C.line }); }
+    if (shot === 'rocket') { blit(T.missile, x, y); parts.push({ x, y, vx: (Math.random() - .5) * 6, vy: (Math.random() - .5) * 6, life: .5, color: Math.random() < .5 ? C.acc : C.line }); }
     else if (shot === 'drone') blit(T.drone, x, y);
     else if (shot === 'rod') { const dx = (s.tx - s.sx) * .08, dy = (s.ty - s.sy) * .08; P.line(x - dx, y - dy, x, y, C.line); P.line(x - dx + 1, y - dy, x + 1, y, C.soft); } // streak
     else if (shot === 'rocks') { P.fill(x - 1, y - 1, 2, 2, '#b8a99a'); if (Math.random() < .5) parts.push({ x, y, vx: 0, vy: 0, life: .3, color: C.dim }); }
     else if (shot === 'lava') { P.fill(x - 1, y - 1, 3, 3, C.lava); P.dot(x, y, C.sun); parts.push({ x, y, vx: (Math.random() - .5) * 8, vy: 6, life: .6, color: Math.random() < .5 ? C.lava : C.sun }); }
-    else if (shot === 'swarm') { P.fill(x - 1, y - 1, 2, 2, C.line); parts.push({ x, y, vx: (Math.random() - .5) * 4, vy: (Math.random() - .5) * 4, life: .4, color: C.pink }); }
-    else if (shot === 'capsule') { P.fill(x - 2, y - 1, 5, 3, C.line); P.dot(x, y, C.pink); if (Math.random() < .5) parts.push({ x, y, vx: 0, vy: 0, life: .4, color: C.soft }); }
+    else if (shot === 'swarm') { P.fill(x - 1, y - 1, 2, 2, C.line); parts.push({ x, y, vx: (Math.random() - .5) * 4, vy: (Math.random() - .5) * 4, life: .4, color: C.acc }); }
+    else if (shot === 'capsule') { P.fill(x - 2, y - 1, 5, 3, C.line); P.dot(x, y, C.acc); if (Math.random() < .5) parts.push({ x, y, vx: 0, vy: 0, life: .4, color: C.soft }); }
     else if (shot === 'water') { P.fill(x - 1, y - 1, 3, 2, C.water); parts.push({ x, y, vx: (Math.random() - .5) * 6, vy: 10, life: .5, color: Math.random() < .5 ? C.water : C.line }); }
     else if (shot === 'gas') { // a puff that swells as it drifts
       const r = 2 + k * 5;
@@ -965,7 +974,7 @@ function draw(t, heal) {
     ctx.globalAlpha = 1;
   }
 
-  // first-run hints: tap the planet, then the Laser Station once it's affordable
+  // first-run hints: tap the planet, then the Beam Spire once it's affordable
   const bob = Math.round(Math.sin(t * 6) * 2);
   if (photo) return; // takePhoto() reads the scene buffer itself
   if (!S.taps) blit(T.hand, CX + R * .2, CY - R * .3 + bob);
@@ -1231,7 +1240,7 @@ function takePhoto() {
   g.imageSmoothingEnabled = false;
   g.drawImage(buf, 0, 0, W, h, 0, 0, W * z, h * z);
   g.fillStyle = C.deep; g.fillRect(0, h * z, c.width, cap);
-  g.fillStyle = C.pink; g.fillRect(0, h * z, c.width, z);
+  g.fillStyle = C.acc; g.fillRect(0, h * z, c.width, z);
   g.font = `${14 * z}px VT323, monospace`; g.textBaseline = 'middle';
   const cycle = Math.floor(S.world / WORLDS.length), y = h * z + cap / 2 + z;
   g.fillStyle = C.line; g.textAlign = 'left'; g.fillText(`${world().name}${cycle ? ' ' + roman(cycle + 1) : ''} · ${pct()}% terraformed`, 8 * z, y);
@@ -1256,7 +1265,7 @@ $('sclose').addEventListener('click', closeSettings);
 // ---------- hud / panel ----------
 const set = (el, html) => { if (el._h !== html) el.innerHTML = el._h = html; }; // skip needless DOM rewrites
 // Modal dialogs (talents, warp, settings) make everything else inert: unreachable by tap, keyboard or screen reader.
-const BEHIND = ['c', 'top', 'side', 'bar', 'panel', 'guide']; // not #toast: read-only, and its announcements must still reach screen readers
+const BEHIND = ['c', 'top', 'dock', 'panel', 'guide']; // not #toast: read-only, and its announcements must still reach screen readers
 const shield = on => { for (const id of BEHIND) $(id).inert = on; };
 const tiles = SYS.map((sy, s) => {
   const b = document.createElement('button');
@@ -1293,11 +1302,13 @@ function updateUI() {
   goal.hidden = !g && !S.done;
   if (S.done) { // the world is alive: the goal bar holds the warp until the player is ready
     goal.classList.toggle('ready', !lastWorld()); // nothing to claim at the edge of the map
+    goal.style.setProperty('--p', '100%');
     set($('gtext'), lastWorld() ? `${world().name} is alive. You reached the edge of the map` : `${world().name} is alive. Warp to ${WORLDS[(S.world + 1) % WORLDS.length].name}`);
     set($('grew'), lastWorld() ? '' : 'x2');
   } else if (g) {
     const n = Math.min(g.get(), g.need);
     goal.classList.toggle('ready', n >= g.need && g.reward > 0);
+    goal.style.setProperty('--p', 100 * n / g.need + '%'); // the bar fills as the goal progresses
     set($('gtext'), `${val(g.text)} ${n}/${g.need}`);
     set($('grew'), g.reward ? `${ICON}${fmt(rewardOf(g))}` : '');
   }
@@ -1314,7 +1325,7 @@ function updateUI() {
   const cs = $('contract'), job = S.contract; cs.hidden = !job;
   const left = Math.max(0, Math.ceil(job?.t ?? 0));
   if (job) set(cs, `<b>CONTRACT ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</b> ${conText(job)} <span>${ICON}${fmt(job.reward)}</span>`);
-  if (innerWidth < 640 && SIDE) $('toast').style.top = Math.max(SIDE.b * PX, job ? cs.getBoundingClientRect().bottom : 0) + 10 + 'px'; // phones: toasts step below the contract
+  if (innerWidth < 640 && W) $('toast').style.top = (job ? cs.getBoundingClientRect().bottom : $('top').getBoundingClientRect().bottom) + 10 + 'px'; // phones: toasts step below the contract
   updateGuide();
   if (W && hudH() !== layoutH) resize(); // goal text wrapped or the HUD changed size: re-fit the scene below it
 
@@ -1354,12 +1365,12 @@ function rowClick(k) {
     S.life -= unlockCost(s); S.on[s] = true; play('unlock'); buzz(15);
     if (S.boon === 'crew') S.L[s][0] = Math.max(S.L[s][0], 5); // Veteran Crew
     toast(sy.fact);
-    burst(x, y, [C.line, C.pink, C.soft], 40, 60);
+    burst(x, y, [C.line, C.acc, C.soft], 40, 60);
   } else {
     const L = S.L[s], c = price(s, k), m0 = markOf(s);
     if (L[k] >= MAXL || S.life < c) return play('deny');
     S.life -= c; L[k]++; play('buy');
-    burst(x, y, [C.pink, C.line], 14, 40);
+    burst(x, y, [C.acc, C.line], 14, 40);
     refit(s, m0);
   }
   fire(s, true);
@@ -1391,7 +1402,7 @@ addEventListener('keydown', e => {
 });
 
 // ---------- talents: every healed planet gives a Star Seed; each talent costs one and needs the node above it ----------
-const TI = { // 9x9 talent icons (w = line, n = fill, p = pink)
+const TI = { // 9x9 talent icons (w = line, n = fill, p = accent)
   sprout: tiny(['..ww.ww..', '.wwwwwww.', '..wwwww..', '....w....', '....w....', '.wwwwwww.', '.wnnnnnw.', '..wnnnw..', '..wwwww..']),
   star: tiny(['....w....', '....w....', '...www...', 'wwwwwwwww', '.wwwwwww.', '..wwwww..', '..ww.ww..', '.ww...ww.', '.w.....w.']),
   moon: tiny(['...wwww..', '..www....', '.www.....', '.ww......', '.ww......', '.www.....', '..www..w.', '...wwwww.', '.........']),
@@ -1402,62 +1413,43 @@ const TI = { // 9x9 talent icons (w = line, n = fill, p = pink)
   bolt: tiny(['.....ww..', '....ww...', '...ww....', '..wwwww..', '....ww...', '...ww....', '..ww.....', '.ww......', '.........']),
 };
 const src = c => c.toDataURL(), HAND = src(T.hand), ENERGY = src(T.energy), SEED = `<img class="ico" src="${src(TI.sprout)}" alt="Star Seeds">`;
-// Grid is 300 x 420. Each tier r: a diamond in the middle (top, left, right, bottom) and a two-node branch on each side.
-// via: the y where the connector from the parent turns sideways.
-const tier = r => { const b = 140 * r; return { T: b + 25, M: b + 62, B: b + 100, via: b - 8 }; };
-const t0 = tier(0), t1 = tier(1), t2 = tier(2);
+// Grid is 300 x 420: roots growing down from Spark; each talent links straight to the one it needs.
 const TAL = [
-  ['spark', 'Spark', 'Taps give x3 life.', HAND, 150, t0.T],
-  ['seedbank', 'Seed Bank', 'Start every new world with 1,000 life (times your warp boost).', src(TI.sprout), 100, t0.M, 'spark', t0.M],
-  ['lens', 'Vanguard', () => `${SYS[0].name} and ${SYS[1].name} output x2.`, () => TILE[SYS[0].id].lit, 200, t0.M, 'spark', t0.M],
-  ['roots', 'Deep Roots', 'All output +25%.', ENERGY, 150, t0.B, 'spark'],
-  ['crit', 'Lucky Strike', '10% of taps are critical: x10 life.', src(TI.star), 42, t1.T, 'roots', t1.via],
-  ['crit2', 'Jackpot', 'Critical taps happen 20% of the time.', src(TI.star), 42, t1.B, 'crit'],
-  ['swarm', 'Backbone', () => `${SYS[2].name} and ${SYS[3].name} output x2.`, () => TILE[SYS[2].id].lit, 150, t1.T, 'roots', t1.via],
-  ['thrift', 'Bulk Orders', 'Upgrades cost 10% less.', src(TI.tag), 100, t1.M, 'swarm', t1.M],
-  ['patron', 'Patron', 'Goal rewards x3.', src(TI.gift), 200, t1.M, 'swarm', t1.M],
-  ['bloom', 'Bloom', 'All output +30%.', ENERGY, 150, t1.B, 'swarm'],
-  ['autotap', 'Tap Bot', 'Taps the planet for you once a second.', src(TI.bot), 258, t1.T, 'roots', t1.via],
-  ['autotap2', 'Tap Swarm', 'Automatic taps 4 times a second.', src(TI.bot), 258, t1.B, 'autotap'],
-  ['sleep', 'Night Shift', 'Offline earnings count up to 24h instead of 12h.', src(TI.moon), 42, t2.T, 'bloom', t2.via],
-  ['dream', 'Lucid Dreams', 'Offline earnings x2.', src(TI.moon), 42, t2.B, 'sleep'],
-  ['grow', 'Heavy Hitters', () => `${SYS[4].name} and ${SYS[5].name} output x2.`, () => TILE[SYS[4].id].lit, 150, t2.T, 'bloom', t2.via],
-  ['cheap', 'Fast Track', 'Unlocking systems costs 25% less.', src(TI.tag), 100, t2.M, 'grow', t2.M],
-  ['echo', 'Warp Echo', 'All output +5% for every world healed, up to +50%.', src(TI.rings), 200, t2.M, 'grow', t2.M],
-  ['gaia', 'Gaia', 'All output +50%.', src(TI.sprout), 150, t2.B, 'grow'],
-  ['kinetic', 'Kinetic Grid', '+1% output per 100 lifetime taps, up to +100%.', src(TI.bolt), 258, t2.T, 'bloom', t2.via],
-  ['tapecho', 'Tap Echo', 'Taps are worth 50% more.', HAND, 258, t2.B, 'kinetic'],
-].map(([id, name, desc, icon, x, y, req, via]) => ({ id, name, desc, icon, x, y, req, via }));
+  ['spark', 'Spark', 'Taps give x3 life.', HAND, 150, 28],
+  ['seedbank', 'Seed Bank', 'Start every new world with 1,000 life (times your warp boost).', src(TI.sprout), 72, 68, 'spark'],
+  ['lens', 'Vanguard', () => `${SYS[0].name} and ${SYS[1].name} output x2.`, () => TILE[SYS[0].id].lit, 228, 68, 'spark'],
+  ['roots', 'Deep Roots', 'All output +25%.', ENERGY, 150, 100, 'spark'],
+  ['crit', 'Lucky Strike', '10% of taps are critical: x10 life.', src(TI.star), 52, 150, 'roots'],
+  ['crit2', 'Jackpot', 'Critical taps happen 20% of the time.', src(TI.star), 30, 218, 'crit'],
+  ['swarm', 'Backbone', () => `${SYS[2].name} and ${SYS[3].name} output x2.`, () => TILE[SYS[2].id].lit, 150, 172, 'roots'],
+  ['thrift', 'Bulk Orders', 'Upgrades cost 10% less.', src(TI.tag), 98, 226, 'swarm'],
+  ['patron', 'Patron', 'Goal rewards x3.', src(TI.gift), 202, 226, 'swarm'],
+  ['bloom', 'Bloom', 'All output +30%.', ENERGY, 150, 250, 'swarm'],
+  ['autotap', 'Tap Bot', 'Taps the planet for you once a second.', src(TI.bot), 248, 150, 'roots'],
+  ['autotap2', 'Tap Swarm', 'Automatic taps 4 times a second.', src(TI.bot), 270, 218, 'autotap'],
+  ['sleep', 'Night Shift', 'Offline earnings count up to 24h instead of 12h.', src(TI.moon), 62, 300, 'bloom'],
+  ['dream', 'Lucid Dreams', 'Offline earnings x2.', src(TI.moon), 34, 372, 'sleep'],
+  ['grow', 'Heavy Hitters', () => `${SYS[4].name} and ${SYS[5].name} output x2.`, () => TILE[SYS[4].id].lit, 150, 318, 'bloom'],
+  ['cheap', 'Fast Track', 'Unlocking systems costs 25% less.', src(TI.tag), 100, 380, 'grow'],
+  ['echo', 'Warp Echo', 'All output +5% for every world healed, up to +50%.', src(TI.rings), 200, 380, 'grow'],
+  ['gaia', 'Gaia', 'All output +50%.', src(TI.sprout), 150, 398, 'grow'],
+  ['kinetic', 'Kinetic Grid', '+1% output per 100 lifetime taps, up to +100%.', src(TI.bolt), 238, 300, 'bloom'],
+  ['tapecho', 'Tap Echo', 'Taps are worth 50% more.', HAND, 266, 372, 'kinetic'],
+].map(([id, name, desc, icon, x, y, req]) => ({ id, name, desc, icon, x, y, req }));
 const val = v => (typeof v === 'function' ? v() : v); // pair talents describe the current world's systems
 const talById = Object.fromEntries(TAL.map(t => [t.id, t]));
 const canTal = t => !has(t.id) && (!t.req || has(t.req));
 
-// Round pixel emblem behind each cluster (dark, so the nodes and links stay the focus).
-const EMBLEM = (() => {
-  const c = mk(40, 40), g = c.getContext('2d'), p = pen(g), ink = '#2c3250';
-  for (let dy = -19; dy <= 19; dy++) { const dx = Math.round(Math.sqrt(361 - dy * dy)); p.fill(20 - dx, 20 + dy, dx * 2 + 1, 1, '#242940'); }
-  p.ring(20, 20, 18, 18, 0, 2 * Math.PI, ink); p.ring(20, 20, 12, 12, 0, 2 * Math.PI, ink);
-  p.line(20, 2, 20, 38, ink); p.line(2, 20, 38, 20, ink);
-  for (const [a, b, c2, d] of [[20, 8, 32, 20], [32, 20, 20, 32], [20, 32, 8, 20], [8, 20, 20, 8]]) p.line(a, b, c2, d, ink);
-  for (const [x, y] of [[9, 9], [31, 9], [9, 31], [31, 31]]) { p.line(x - 1, y, x + 1, y, ink); p.line(x, y - 1, x, y + 1, ink); }
-  return c.toDataURL();
-})();
-
 const tree = $('tree'), SVGNS = 'http://www.w3.org/2000/svg', pctX = x => x / 3 + '%', pctY = y => y / 4.2 + '%';
-for (const [x, y, size] of [[150, t0.M, 130], ...[t1, t2].flatMap(t => [[150, t.M, 130], [42, t.M, 110], [258, t.M, 110]])]) {
-  const im = Object.assign(document.createElement('img'), { src: EMBLEM, alt: '', className: 'temb' });
-  Object.assign(im.style, { left: pctX(x), top: pctY(y), width: size / 3 + '%' });
-  tree.append(im);
-}
 const lines = document.createElementNS(SVGNS, 'svg');
-lines.setAttribute('viewBox', '0 0 300 420'); lines.setAttribute('preserveAspectRatio', 'none'); lines.setAttribute('shape-rendering', 'crispEdges');
+lines.setAttribute('viewBox', '0 0 300 420'); lines.setAttribute('preserveAspectRatio', 'none');
 tree.append(lines);
 let selTal = 'spark';
 for (const t of TAL) {
-  if (t.req) { // square connector: down from the parent, across at `via`, down into the child
-    const pr = talById[t.req], via = t.via ?? t.y;
+  if (t.req) { // a straight root from the parent
+    const pr = talById[t.req];
     t.line = document.createElementNS(SVGNS, 'polyline');
-    t.line.setAttribute('points', `${pr.x},${pr.y} ${pr.x},${via} ${t.x},${via} ${t.x},${t.y}`);
+    t.line.setAttribute('points', `${pr.x},${pr.y} ${t.x},${t.y}`);
     t.line.setAttribute('fill', 'none'); t.line.setAttribute('stroke-width', '3');
     lines.append(t.line);
   }
@@ -1468,7 +1460,7 @@ for (const t of TAL) {
   t.el.addEventListener('click', () => { selTal = t.id; renderTal(); });
   tree.append(t.el);
 }
-// links light up pink once both ends are unlocked; drawn in tree order so lit links sit on top of dim ones
+// links light up once both ends are unlocked; drawn in tree order so lit links sit on top of dim ones
 function renderTal() {
   set($('tseeds'), `${SEED} ${S.seeds}`);
   for (const t of TAL) {
@@ -1477,7 +1469,7 @@ function renderTal() {
     if (t.el.firstChild.getAttribute('src') !== val(t.icon)) t.el.firstChild.src = val(t.icon);
     t.el.setAttribute('aria-label', `${t.name}: ${val(t.desc)} ${on ? 'Unlocked.' : canTal(t) ? 'Available.' : 'Locked.'}`);
     t.el.setAttribute('aria-pressed', selTal === t.id);
-    if (t.line) { t.line.setAttribute('stroke', on ? C.pink : C.dim); if (on) lines.append(t.line); }
+    if (t.line) { t.line.setAttribute('stroke', on ? C.acc : C.dim); if (on) lines.append(t.line); }
   }
   const t = talById[selTal], buy = $('tbuy');
   $('tname').textContent = t.name;
@@ -1532,7 +1524,7 @@ function showWarp() { // the world just hit 100%: log the run, then offer the wa
   const name = world().name, s = Math.round(last - S.start);
   S.done = true; S.best[name] = Math.min(S.best[name] ?? Infinity, s);
   speedSaid = s >= 300; // a sub-5-minute heal earns a remark once the player chooses Stay
-  burst(CX, CY, [C.line, C.pink, C.soft], 80, 90);
+  burst(CX, CY, [C.line, C.acc, C.soft], 80, 90);
   openWarp();
 }
 const lastWorld = () => S.world >= MAX_WORLD; // the edge of the map: no further warp
@@ -1604,7 +1596,7 @@ function warp(boon = '') {
 // glints get their own pixels. Shapes are painted flat and snapped to the palette; a bevel pass then lights each plate's top-left
 // edge and darkens its bottom-right one; last, a dark inner and a white outer outline (the sticker edge of all our line art).
 // Two frames for talking: visor glint, chest light and ear LED change.
-const VOS_PAL = ['#11131f', '#1c2030', '#323954', '#4a5378', '#59607f', '#6f7aa8', '#8f99c4', '#a7b1d8', '#e9ecf5', '#e98aa3', '#a8566f', '#ffe08a', '#ffb36b'].map(rgb);
+const VOS_PAL = ['#11131f', '#1c2030', '#323954', '#4a5378', '#59607f', '#6f7aa8', '#8f99c4', '#a7b1d8', '#e9ecf5', '#ff9a3d', '#a8521f', '#ffe08a', '#ffb36b'].map(rgb);
 const VOS_RAMP = ['#323954', '#4a5378', '#6f7aa8', '#a7b1d8', '#e9ecf5'].map(rgb).map(String); // dark -> light steps the bevel moves along
 function makeVos(frame) {
   const k = 1.75, M = 3, N = Math.ceil(72 * k) + 2 * M, c = mk(N, N), g = c.getContext('2d', { willReadFrequently: true });
@@ -1616,7 +1608,7 @@ function makeVos(frame) {
   const P2 = pen(g), line = (x0, y0, x1, y1, col) => P2.line(...T(x0, y0), ...T(x1, y1), col), dot = (x, y, col) => P2.dot(...T(x, y), col);
   const ca = Math.cos(-.3), sa = Math.sin(-.3), R = (x, y) => [35 + x * ca - y * sa, 64 + x * sa + y * ca]; // rifle frame: across the body, rising
   const rp = (pts, col) => poly(pts.map(q => R(...q)), col), rl = (a, b, c2, d, col) => line(...R(a, b), ...R(c2, d), col), rd = (x, y, col) => dot(...R(x, y), col);
-  const A = '#6f7aa8', L = '#a7b1d8', H = '#e9ecf5', S2 = '#4a5378', D = '#323954', K = '#1c2030', PK = '#e98aa3', PD = '#a8566f', GM = '#59607f', GL = '#8f99c4';
+  const A = '#6f7aa8', L = '#a7b1d8', H = '#e9ecf5', S2 = '#4a5378', D = '#323954', K = '#1c2030', PK = '#ff9a3d', PD = '#a8521f', GM = '#59607f', GL = '#8f99c4';
   // body
   poly([[2, 50], [12, 40], [60, 38], [70, 48], [70, 72], [2, 72]], D);
   poly([[20, 44], [50, 42], [55, 72], [17, 72]], A); // chest plate
@@ -1770,7 +1762,7 @@ function updateGuide() {
   set($('ghint'), l.until ? '&gt; ' + val(l.hint) : done && !l.auto ? '&gt; tap to continue' : '');
   $('ghint').classList.toggle('wait', !!l.until);
   $('guide').classList.toggle('compact', sel >= 0); // panel open: hide the portrait, keep the bubble above the panel and arrows
-  $('guide').style.bottom = (sel >= 0 ? panelH + 12 : $('bar').offsetHeight - 12) + 'px'; // feet tucked behind the bar, so the talking bob never shows a gap
+  $('guide').style.bottom = (sel >= 0 ? panelH + 12 : $('dock').offsetHeight - 12) + 'px'; // feet tucked behind the dock, so the talking bob never shows a gap
 }
 
 // ---------- saving & offline progress (browser localStorage: no server, per device) ----------
@@ -1914,8 +1906,8 @@ function tapPlanet(x, y, auto = false, mult = 1) {
   earn(g); S.taps++;
   if (crit) S.n.crit++;
   if (storm) S.n.storm++;
-  if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.pink, end: true }); }
-  burst(x, y, crit ? [C.sun, C.line, C.pink] : [C.line, C.pink], crit ? 24 : 10);
+  if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.acc, end: true }); }
+  burst(x, y, crit ? [C.sun, C.line, C.acc] : [C.line, C.acc], crit ? 24 : 10);
   play(crit ? 'crit' : 'tap'); if (crit && !auto) buzz(25); // auto taps would buzz nonstop
   floats.push({ x, y: y - 8, text: '+' + fmt(g), life: 1, col: crit ? C.sun : C.line });
 }
@@ -1937,7 +1929,7 @@ function endEvent() { ev = null; comet = null; evNext = (120 + Math.random() * 1
 function catchComet() {
   const g = pay(60, 100);
   earn(g); S.n.comet++; buzz([30, 30, 60]);
-  burst(comet.x, comet.y, [C.sun, C.line, C.pink], 40, 70); play('crit'); shake = .6;
+  burst(comet.x, comet.y, [C.sun, C.line, C.acc], 40, 70); play('crit'); shake = .6;
   floats.push({ x: comet.x, y: comet.y - 10, text: '+' + fmt(g), life: 1.6, col: C.sun });
   endEvent();
   if ($('guide').classList.contains('quip')) nextLine(); // replace the "grab it" remark, never a briefing line
@@ -2008,7 +2000,7 @@ function openCrate() {
   const [x, y] = cratePos(last), g = pay(600, 500), seed = Math.random() < .1;
   earn(g); S.daily = crate.day; S.n.crates++; crate = null;
   if (seed) S.seeds++;
-  burst(x, y, [C.sun, C.line, C.pink], 50, 70); play('coin'); buzz(30); shake = .4;
+  burst(x, y, [C.sun, C.line, C.acc], 50, 70); play('coin'); buzz(30); shake = .4;
   floats.push({ x, y: y - 10, text: '+' + fmt(g), life: 1.8, col: C.sun });
   toast(`Supply drop: ${fmt(g)} life${seed ? ' and a Star Seed!' : '.'} Next one tomorrow.`, true);
   quip(QUIPS.crate, true); save();
@@ -2019,14 +2011,14 @@ const CRATE = grit(art(24, 19, p => {
   for (const y of [9, 13]) p.line(3, y, 20, y, C.dim); // planks
   for (const x of [6, 17]) { p.fill(x, 6, 2, 12, C.line); p.line(x, 6, x, 17, C.dim); } // metal straps
   p.box(0, 2, 24, 4); p.line(1, 4, 22, 4, C.dim); // lid with an overhang
-  p.box(10, 1, 4, 4); p.dot(11, 2, C.pink); p.dot(12, 2, C.pink); // latch
-  p.ring(12, 12, 6, 2, Math.PI, 2 * Math.PI, C.dim); p.disc(12, 12, 3, C.pink); p.ring(12, 12, 6, 2, 0, Math.PI); // Corps emblem: a ringed planet
+  p.box(10, 1, 4, 4); p.dot(11, 2, MK); p.dot(12, 2, MK); // latch
+  p.ring(12, 12, 6, 2, Math.PI, 2 * Math.PI, C.dim); p.disc(12, 12, 3, MK); p.ring(12, 12, 6, 2, 0, Math.PI); // Corps emblem: a ringed planet
   for (const [x, y] of [[3, 7], [20, 7], [3, 17], [20, 17]]) p.dot(x, y, C.line); // rivets
 }), 5, diagLight);
 const CANOPY = grit(art(33, 13, p => {
-  for (let y = 0; y < 12; y++) { // dome in four gores, alternating pink and pale
+  for (let y = 0; y < 12; y++) { // dome in four gores, alternating accent and pale
     const hw = Math.round(16 * Math.sqrt(1 - ((11 - y) / 11) ** 2));
-    for (let x = -hw; x <= hw; x++) p.dot(16 + x, y, Math.floor((x + 16) / 8.25) % 2 ? C.pink : C.line);
+    for (let x = -hw; x <= hw; x++) p.dot(16 + x, y, Math.floor((x + 16) / 8.25) % 2 ? MK : C.line);
   }
   p.ring(16, 11, 16, 11, Math.PI, 2 * Math.PI, C.line);
   for (let x = 0; x <= 32; x++) p.dot(x, 11 + (x % 8 > 3 ? 1 : 0), C.line); // scalloped hem
@@ -2044,7 +2036,7 @@ function drawCrate(t) {
   for (const [hx, cx] of [[-15, -11], [-6, -6], [6, 6], [15, 11]]) P.line(x + hx, y - 18, x + cx, y - 8, C.soft); // lines from hem to lid
   blit(CANOPY, x, y - 25);
   blit(CRATE, x, y);
-  if (landed && (calm() || Math.sin(t * 5) > 0)) P.fill(x + 13, y - 12, 3, 3, C.pink); // tap me
+  if (landed && (calm() || Math.sin(t * 5) > 0)) P.fill(x + 13, y - 12, 3, 3, C.acc); // tap me
 }
 
 // ---------- sector cinematic: after the last world of a cycle, all eight worlds alive in a row, the Commander's speech, then the warp ----------
@@ -2085,7 +2077,7 @@ function stepCine(t, dt) {
   if (due >= 0 && c.t > due * .7) c.planets[due].lush = makeLush(c.planets[due].w, c.planets[due].seed);
   // scene: the sky, then each world popping in
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-  for (const [x, y, k] of starsIn) P.dot(x, y, k > 4 ? C.soft : C.dot);
+  drawStars(0);
   c.planets.forEach((p, i) => {
     const at = .8 + i * .7, k = Math.min(1, (c.t - at) / .4);
     if (k <= 0 || !p.lush) return;
@@ -2114,7 +2106,7 @@ function stepCine(t, dt) {
   });
   const ta = Math.min(1, (c.t - 12) / 1.2);
   if (ta > 0) {
-    out.globalAlpha = ta; out.font = `${Math.round(fs * 3)}px VT323, monospace`; out.fillStyle = C.pink;
+    out.globalAlpha = ta; out.font = `${Math.round(fs * 3)}px VT323, monospace`; out.fillStyle = C.acc;
     out.fillText(`CYCLE ${roman(c.cycle)}`, W * z / 2, H * z * .7);
   }
   out.globalAlpha = 1;

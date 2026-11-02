@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Terraform</title>
 <meta name="description" content="A pixel-art idle game: heal dead alien worlds with lasers, mirrors, drones, comets and antimatter. Free, in the browser, keeps counting while you are away.">
-<meta name="theme-color" content="#1f2333">
+<meta name="theme-color" content="#111622">
 <meta property="og:title" content="Terraform">
 <meta property="og:description" content="Revive 8 dead worlds. A pixel-art idle game with real space science.">
 <meta property="og:type" content="website">
@@ -20,22 +20,23 @@
 <body>
 <canvas id="c" tabindex="0" role="button" aria-label="Your planet. Tap it, or press Enter or Space, to collect life. When a golden comet or a supply crate is in the sky, Enter or Space catches it. M taps the moon. Open systems with the buttons at the bottom or keys 1 to 6."></canvas>
 <header id="top">
+  <div id="hud"><div id="life"></div><div id="rate"></div></div>
   <button id="goal"><span id="gtext"></span><span id="grew"></span></button>
   <button id="gear" aria-label="Settings" aria-controls="settings"></button>
 </header>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="contract" role="status" hidden></div>
-<aside id="side">
-  <div class="box"><div id="life"></div><div id="rate"></div></div>
-  <div class="box"><div id="wname"></div><small id="wtrait"></small><small id="wtime" aria-label="Run time"></small><div id="heal" role="progressbar" aria-label="Terraformed" aria-valuemin="0" aria-valuemax="100"><div id="healbar"></div></div><div id="healtxt"></div></div>
-</aside>
 <!-- before the bar so the commander stands behind it -->
 <div id="guide" hidden>
   <img id="gface" alt="Commander Vos">
   <div id="gbox"><button id="gbubble"><b id="gname">COMMANDER VOS</b><span id="gsay" aria-hidden="true"></span><small id="ghint"></small></button><button id="gskip">Skip</button></div>
   <p id="gsr" class="sr" aria-live="polite"></p>
 </div>
-<nav id="bar" aria-label="Systems"></nav>
+<footer id="dock">
+  <div id="heal" role="progressbar" aria-label="Terraformed" aria-valuemin="0" aria-valuemax="100"><div id="healbar"></div></div>
+  <div id="world"><div><b id="wname"></b> <small id="wtime" aria-label="Run time"></small><small id="wtrait"></small></div><div id="healtxt"></div></div>
+  <nav id="bar" aria-label="Systems"></nav>
+</footer>
 <section id="panel" aria-labelledby="pname" hidden>
   <div id="phead"><button id="prev" class="arrow" aria-label="Previous system">&lt;</button><b id="pname"></b><button id="next" class="arrow" aria-label="Next system">&gt;</button><span id="pinfo"></span><button id="pclose" aria-label="Close">X</button></div>
   <div id="pbody"><div id="prows"></div><p id="pfact" class="fact"></p></div>
