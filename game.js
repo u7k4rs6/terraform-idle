@@ -9,7 +9,7 @@ const ucost = (s, k, l) => Math.ceil(SYS[s].unlock * UPM[k][0] * UPM[k][1] ** l 
 const sysRate = (s, L) => SYS[s].base * (1 + L[0]) * (1 + .25 * L[1]) * 1.08 ** L[2];
 const tapOf = rate => Math.max(4 * priceScale(), Math.round(rate * .01)); // 1% of income a tap: rapid tapping (10/s, full combo) is only ~15-40% faster
 // Log scale so the planet heals steadily while income grows exponentially; /1000 keeps the first taps from jumping to 25%.
-const goalOf = () => GOAL * GOAL_GROWTH ** S.world * DIFFICULTY ** Math.min(S.world, DIFFICULTY_CAP) * (S.boon === 'short' ? .75 : 1);
+const goalOf = () => GOAL * GOAL_GROWTH ** S.world * DIFFICULTY ** Math.min(S.world, DIFFICULTY_CAP);
 const healOf = earned => Math.min(1, Math.log10(1 + earned / 1000) / Math.log10(1 + goalOf() / 1000));
 console.assert(sysRate(0, [0, 0, 0]) === 3 && sysRate(0, [1, 4, 0]) === 12, 'system rate');
 
@@ -37,7 +37,6 @@ const S = {
   life: 0, earned: 0, taps: 0, goal: 0, world: 0, start: 0, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]),
   seeds: 0, tal: [], intro: false, done: false, best: {}, ach: [], n: { ...N0 },
   daily: '', // local date of the last supply drop opened
-  boon: '', offer: [], // the warp boon on this world; the 3 boons a waiting warp offers
   contract: null, // the open side job, as data
 };
 const earn = g => { S.life += g; S.earned += g; };
@@ -60,12 +59,12 @@ const traitMul = (s, live) => {
   else if (t === 'refit') m *= 1 + .3 * markOf(s);
   return m;
 };
-const sysOut = (s, live = true) => sysRate(s, S.L[s]) * boost() * allMul() * traitMul(s, live) * ((SLOT[s].ground ? trait().ground : trait().orbit) || 1) * (live && ev?.id === 'flare' ? 2 : 1) * (S.boon === 'summer' ? 1.5 : 1)
+const sysOut = (s, live = true) => sysRate(s, S.L[s]) * boost() * allMul() * traitMul(s, live) * ((SLOT[s].ground ? trait().ground : trait().orbit) || 1) * (live && ev?.id === 'flare' ? 2 : 1)
   * Object.entries(PAIR).reduce((m, [id, ss]) => (has(id) && ss.includes(s) ? m * 2 : m), 1);
 const rateOf = (live = true) => SYS.reduce((a, _, s) => a + (S.on[s] ? sysOut(s, live) : 0), 0);
 const pay = (secs, min) => Math.max(min * priceScale(), rateOf(false) * secs); // one-off rewards: secs of base income, at least min (scaled)
-const tapGain = () => tapOf(rateOf()) * (has('spark') ? 3 : 1) * (has('tapecho') ? 1.5 : 1) * (trait().tap || 1) * (S.boon === 'hands' ? 3 : 1); // one tap, before a crit
-const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (SYS[s].trait === 'steady' ? .85 : 1) * (has('thrift') ? .9 : 1) * (S.boon === 'bulk' ? .8 : 1) * (trait().price || 1)); // level l -> l+1 of upgrade k
+const tapGain = () => tapOf(rateOf()) * (has('spark') ? 3 : 1) * (has('tapecho') ? 1.5 : 1) * (trait().tap || 1); // one tap, before a crit
+const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (SYS[s].trait === 'steady' ? .85 : 1) * (has('thrift') ? .9 : 1) * (trait().price || 1)); // level l -> l+1 of upgrade k
 const unlockCost = s => Math.ceil(SYS[s].unlock * UNLOCK_GATE[s] * priceScale() * (has('cheap') ? .75 : 1));
 const rewardOf = g => g.reward * priceScale() * (has('patron') ? 3 : 1) * (trait().reward || 1);
 const unlocked = s => s === 0 || S.on[s - 1];
@@ -1585,8 +1584,7 @@ function updateUI() {
   $('rate').textContent = `${fmt(rateOf())} life/s` + (S.world ? ` x${fmt(boost())}` : '');
   const cycle = Math.floor(S.world / WORLDS.length);
   $('wname').textContent = world().name + (cycle ? ' ' + roman(cycle + 1) : '');
-  const boonName = BOONS.find(b => b.id === S.boon)?.name;
-  $('wtrait').textContent = [trait().text, boonName && `Boon: ${boonName}`].filter(Boolean).join(' · ');
+  $('wtrait').textContent = trait().text || '';
   const best = S.best[world().name], clock = n => `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}`;
   $('wtime').textContent = S.done ? (best !== undefined ? `healed · best ${clock(best)}` : 'healed') : clock(Math.max(0, last - S.start)) + (best !== undefined ? ` · best ${clock(best)}` : ''); // frozen once healed
   const h = pct(), ns = STAGES.find(st => healOf(S.earned) < st.at); // next milestone
@@ -1660,7 +1658,6 @@ function rowClick(k) {
   if (!S.on[s]) {
     if (!unlocked(s) || S.life < unlockCost(s)) return play('deny');
     S.life -= unlockCost(s); S.on[s] = true; play('unlock'); buzz(15);
-    if (S.boon === 'crew') S.L[s][0] = Math.max(S.L[s][0], 5); // Veteran Crew
     toast(sy.fact);
     burst(x, y, [C.line, C.acc, C.soft], 40, 60);
   } else {
@@ -1836,10 +1833,10 @@ function showWarp() { // the world just hit 100%: log the run, then offer the wa
 const lastWorld = () => S.world >= MAX_WORLD; // the edge of the map: no further warp
 function openWarp() {
   play('milestone');
-  if (lastWorld()) { // the end of the line: no boons, no seed, nothing to warp to
+  if (lastWorld()) { // the end of the line: no seed, nothing to warp to
     $('warph').textContent = 'Edge of the map';
     $('warptxt').textContent = `${world().name} is alive, and so is every world out to the edge of the map. There is nowhere left to warp. Thank you for playing, Engineer.`;
-    $('boonh').textContent = ''; $('boons').replaceChildren();
+    $('warpgo').hidden = true;
     closePanel(); closeTalents(); closeSettings();
     $('warp').hidden = false; shield(true);
     return $('warpstay').focus();
@@ -1849,18 +1846,12 @@ function openWarp() {
   $('warptxt').textContent = end // every world in the cycle is alive: the planet log, then the next cycle
     ? `All ${WORLDS.length} worlds are alive. Best times: ${WORLDS.map(w => `${w.name} ${mmss(S.best[w.name] ?? 0)}`).join(', ')}. ${S.taps} taps and ${S.ach.length}/${ACH.length} achievements in all. Cycle ${roman(n / WORLDS.length + 1)} starts back at ${next}, with all output x${mult} for good.`
     : `${world().name} is alive. Took ${mmss(S.best[world().name] ?? 0)}. Next stop: ${next}: all output x${mult} for good, prices and the goal grow to match. You also earn a Star Seed to spend on Talents.`;
-  $('boonh').textContent = end ? `Pick a boon for cycle ${roman(n / WORLDS.length + 1)} and warp` : 'Pick a boon for the next world and warp';
-  if (!S.offer.length) S.offer = BOONS.map(b => b.id).sort(() => Math.random() - .5).slice(0, 3); // saved: Stay, reload or reopen keep the same three
-  $('boons').replaceChildren(...S.offer.map(id => {
-    const b = BOONS.find(x => x.id === id), el = document.createElement('button');
-    el.className = 'boon'; el.innerHTML = `<b>${b.name}</b><small>${b.desc}</small>`;
-    el.addEventListener('click', () => { if (end) startCine(id); else { warp(id); save(); } }); // the sector's last world: the cinematic first
-    return el;
-  }));
+  $('warpgo').hidden = false; $('warpgo').textContent = `Warp to ${next}`;
   closePanel(); closeTalents(); closeSettings();
   $('warp').hidden = false; shield(true);
-  $('boons').firstChild.focus();
+  $('warpgo').focus();
 }
+$('warpgo').addEventListener('click', () => { if ((S.world + 1) % WORLDS.length === 0) startCine(); else { warp(); save(); } }); // the sector's last world: the cinematic first
 $('warpshare').addEventListener('click', async () => { // brag: the system share sheet, or the clipboard
   const text = `I brought ${world().name} back to life in ${mmss(S.best[world().name] ?? 0)} in TERRAFORM, a pixel idle game.`, url = 'https://utkarshbahuguna.me/terraform-idle/';
   try { if (navigator.share) await navigator.share({ title: 'Terraform', text, url }); else { await navigator.clipboard.writeText(`${text} ${url}`); flashBtn($('warpshare'), 'Copied'); } } catch { /* dismissed */ }
@@ -1872,27 +1863,24 @@ $('warpstay').addEventListener('click', () => { // admire the living planet; the
 });
 
 // Start a fresh dead world: everything resets except the permanent warp boost.
-function warp(boon = '') {
+function warp() {
   if (lastWorld()) return; // nothing past the edge of the map (and no seed for staying)
   $('warp').hidden = true; shield(false); play('warp');
   tiles[0].focus({ preventScroll: true });
-  Object.assign(S, { world: Math.min(S.world + 1, MAX_WORLD), seeds: S.seeds + 1, boon, life: 0, earned: 0, goal: 1, start: last,
-    done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), offer: [], contract: null });
-  if (boon === 'head') S.on[0] = S.on[1] = true;
+  Object.assign(S, { world: Math.min(S.world + 1, MAX_WORLD), seeds: S.seeds + 1, life: 0, earned: 0, goal: 1, start: last,
+    done: false, on: SYS.map(() => false), L: SYS.map(() => [0, 0, 0]), contract: null });
   if (has('seedbank')) S.life = 1000 * boost();
   const before = SYS.map(sy => sy.id);
   setLoadout(S.world); resize(); // ground systems change size: re-fit the colony around them
   const fresh = SYS.filter(sy => !before.includes(sy.id)).map(sy => sy.name);
   items.length = shots.length = 0;
   conNext = 60; meteors.length = 0; mStep = 0; if (ev) endEvent(); // the new world's song starts from the top // a fresh world: fresh job board, the sky's event stays behind
-  if (boon === 'storm') evNext = Math.min(evNext, 40); // after endEvent(), which would reset it
   stage = 0; zoom = .3; flash = 1; shake = 1; // arrive from far away
   buildWorld();
   guide([ // arrival briefing
     { text: `Welcome to ${world().name}, Engineer. You earned a Star Seed: spend it in Talents, bottom right.` },
     fresh.length && { text: `New hardware online: ${fresh.join(', ')}. Same job as before: bring this world to life.` },
     trait().text && { text: `Survey says: ${trait().text}. Plan your upgrades around it.` },
-    boon && { text: `${BOONS.find(b => b.id === boon).name} is in effect: ${BOONS.find(b => b.id === boon).desc}` },
     { text: world().fact },
   ].filter(Boolean));
 }
@@ -2088,7 +2076,7 @@ function save() {
 }
 // What is saved, and how a (validated) save becomes state again. Older saves lack later fields: each gets its default.
 const saveFields = () => ({ life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal,
-  intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n, daily: S.daily, boon: S.boon, offer: S.offer, contract: S.contract });
+  intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n, daily: S.daily, contract: S.contract });
 const pad = (a, fill) => [...a, ...Array.from({ length: SYS.length - a.length }, fill)]; // saves from the six-slot days
 const fromSave = (v, played) => ({ life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world, on: pad(v.on, () => false), L: pad(v.L, () => [0, 0, 0]),
   start: performance.now() / 1000 - (Number.isFinite(played) ? played : 0), // the current clock, not the stale frame time from before a hidden tab
@@ -2096,7 +2084,7 @@ const fromSave = (v, played) => ({ life: v.life, earned: v.earned, taps: v.taps,
   tal: [...new Set(v.tal || [])], intro: v.intro ?? true, // saves from before the intro skip it
   done: v.done ?? false, best: v.best ?? {}, ach: [...new Set(v.ach || [])], daily: v.daily ?? '',
   n: { ...N0, ...(v.n || {}) },
-  boon: v.boon ?? '', offer: v.offer ?? [], contract: v.contract ?? null });
+  contract: v.contract ?? null }); // older saves may still carry boon/offer from the warp boons: ignored
 // The save is outside data (could be stale or hand-edited): check every field before trusting it.
 const optional = (v, ok) => v === undefined || ok(v); // fields that older saves lack
 const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
@@ -2112,8 +2100,6 @@ const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
   && optional(d.S.ach, v => Array.isArray(v) && v.every(id => ACH.some(a => a.id === id)))
   && optional(d.S.n, v => !!v && typeof v === 'object' && Object.values(v).every(x => Number.isFinite(x) && x >= 0))
   && optional(d.S.daily, v => v === '' || typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v))
-  && optional(d.S.boon, v => v === '' || BOONS.some(b => b.id === v))
-  && optional(d.S.offer, v => Array.isArray(v) && v.length <= 3 && v.every(id => BOONS.some(b => b.id === id)))
   && optional(d.S.contract, c => c === null || !!c && typeof c === 'object' && Object.hasOwn(CONTRACT_KINDS, c.kind)
     && ['arg', 't', 'secs', 'reward'].every(k => Number.isFinite(c[k])) && c.arg >= 0 && c.reward >= 0
     && (c.kind !== 'unlock' || Number.isInteger(c.arg) && c.arg > 0 && c.arg < SYS.length) && (c.kind !== 'earn' || Number.isFinite(c.from))
@@ -2238,7 +2224,7 @@ function startEvent(id = Object.keys(EVENTS)[Math.random() * 3 | 0]) {
   if (id === 'comet') comet = { x: -16, y: TOP + 20 + Math.random() * Math.max(10, CY - R - TOP - 50), vx: (W + 32) / ev.dur }; // crosses the open sky above the planet
   toast(`${ev.name}! ${ev.text}`, true); play('milestone'); shake = .5; quip(QUIPS[id], true);
 }
-function endEvent() { ev = null; comet = null; evNext = (120 + Math.random() * 120) / (S.boon === 'storm' ? 3 : 1) / (trait().events || 1); } // Storm Season and storm worlds: more often
+function endEvent() { ev = null; comet = null; evNext = (120 + Math.random() * 120) / (trait().events || 1); } // storm worlds: more often
 function catchComet() {
   const g = pay(60, 100);
   earn(g); S.n.comet++; buzz([30, 30, 60]);
@@ -2354,12 +2340,12 @@ function drawCrate(t) {
 }
 
 // ---------- sector cinematic: after the last world of a cycle, all eight worlds alive in a row, the Commander's speech, then the warp ----------
-let cine = null; // { t, boon, planets: [{ w, seed, lush }], cycle }
+let cine = null; // { t, planets: [{ w, seed, lush }], cycle }
 const CINE_END = 17;
-function startCine(boon) {
+function startCine() {
   $('warp').hidden = true; // the dialog goes, the shield stays: nothing behind is reachable until the warp
   const first = S.world + 1 - WORLDS.length;
-  cine = { t: 0, boon, cycle: Math.floor((S.world + 1) / WORLDS.length) + 1, planets: WORLDS.map((w, i) => ({ w, seed: 11 + (first + i) * 7, lush: null })) };
+  cine = { t: 0, cycle: Math.floor((S.world + 1) / WORLDS.length) + 1, planets: WORLDS.map((w, i) => ({ w, seed: 11 + (first + i) * 7, lush: null })) };
   Object.assign(cam, { z: 1, fx: W / 2, fy: H / 2, ax: W / 2, ay: H / 2 });
   document.documentElement.classList.add('cine'); $('cineskip').hidden = false; $('cineskip').focus();
   $('guide').inert = false; // the commander speaks over it (his lines advance by themselves)
@@ -2372,11 +2358,10 @@ function startCine(boon) {
 }
 function endCine() {
   if (!cine) return;
-  const boon = cine.boon;
   cine = null;
   document.documentElement.classList.remove('cine'); $('cineskip').hidden = true;
   if (!$('guide').hidden) { gi = gLines.length - 1; nextLine(); } // cut the speech short if skipped
-  warp(boon); save();
+  warp(); save();
 }
 $('cineskip').addEventListener('click', endCine);
 const planetAt = i => { // rows of six on wide screens, four on tall ones
@@ -2491,15 +2476,13 @@ function step(ms) {
   try {
     Object.assign(S, { on: [true, false, false, false, false, false], life: 1e12 });
     console.assert([9, 10, 24, 25].map(n => (combo = n, comboMul())).join() === '1,1.25,1.25,1.5', 'combo tiers');
-    const base = { tap: tapGain(), price: price(0, 1), goal: goalOf(), out: sysOut(0) }, ratio = (id, f) => (S.boon = id, f());
-    console.assert(ratio('hands', tapGain) === base.tap * 3 && ratio('short', goalOf) === base.goal * .75 && ratio('summer', () => sysOut(0)) === base.out * 1.5
-      && ratio('bulk', () => price(0, 1)) === Math.ceil(ucost(0, 1, 0) * (SYS[0].trait === 'steady' ? .85 : 1) * .8) && ratio('', () => price(0, 1)) === base.price, 'boon multipliers');
+    console.assert(price(0, 1) === Math.ceil(ucost(0, 1, 0) * (SYS[0].trait === 'steady' ? .85 : 1)), 'Workhorse: upgrades 15% off');
     console.assert(/^\d{4}-\d{2}-\d{2}$/.test(today()), 'daily date format');
     Object.assign(S, { intro: true, daily: today() }); crateWait = 0; stepCrate(1); console.assert(!crate, 'one supply drop per day');
     console.assert(CONTRACT_KINDS.unlock.pick()?.arg === 1, 'contract: unlock the next system');
     const seeds = S.seeds; S.world = MAX_WORLD; warp('hands'); console.assert(S.world === MAX_WORLD && S.seeds === seeds, 'warp: none past the last world'); S.world = 0;
-    const sample = { ...saveFields(), seeds: 3, tal: ['spark'], intro: false, done: true, best: { CRIMSON: 99 }, ach: ['light'], daily: '2026-01-01', boon: 'hands',
-      offer: ['head'], contract: { kind: 'combo', arg: 15, secs: 60, t: 9, reward: 1 }, n: { ...S.n, crit: 7 } };
+    const sample = { ...saveFields(), seeds: 3, tal: ['spark'], intro: false, done: true, best: { CRIMSON: 99 }, ach: ['light'], daily: '2026-01-01',
+      contract: { kind: 'combo', arg: 15, secs: 60, t: 9, reward: 1 }, n: { ...S.n, crit: 7 } };
     const back = fromSave(JSON.parse(JSON.stringify(sample)), 0), lost = Object.keys(sample).filter(k => JSON.stringify(back[k]) !== JSON.stringify(sample[k]));
     console.assert(!lost.length, 'save round trip loses: ' + lost.join(', '));
     const job = { kind: 'earn', arg: 500, from: 0, secs: 90, t: 40, reward: 300 }, sv = c => validSave({ t: 1, S: { ...JSON.parse(keep), contract: c } });
