@@ -51,7 +51,7 @@ const PAIR = { lens: [0, 1, 2], swarm: [3, 4, 5], grow: [6, 7] }; // orbit, grou
 // Machine traits (data.js TRAITS) that change output; Jackpot, Night Shift, Workhorse and Gravity Well act in fire, away, price, stepEvents.
 const traitMul = (s, live) => {
   const t = SYS[s].trait, h = healOf(S.earned);
-  let m = 1 + .1 * SYS.reduce((n, sy, j) => n + (j !== s && S.on[j] && sy.trait === 'support'), 0);
+  let m = 1 + .1 * SYS.reduce((n, sy, j) => n + (j !== s && !!S.on[j] && sy.trait === 'support'), 0); // !!: a short S.on must not make NaN
   if (t === 'overdrive') m *= live && ev ? 2 : 1;
   else if (t === 'ramp') m *= .6 + .9 * h;
   else if (t === 'early') m *= 1.6 - .8 * h;
@@ -2474,7 +2474,7 @@ function step(ms) {
 (() => {
   const keep = JSON.stringify(S), was = { combo, crateWait };
   try {
-    Object.assign(S, { on: [true, false, false, false, false, false], life: 1e12 });
+    Object.assign(S, { on: SYS.map((_, s) => s === 0), life: 1e12 });
     console.assert([9, 10, 24, 25].map(n => (combo = n, comboMul())).join() === '1,1.25,1.25,1.5', 'combo tiers');
     console.assert(price(0, 1) === Math.ceil(ucost(0, 1, 0) * (SYS[0].trait === 'steady' ? .85 : 1)), 'Workhorse: upgrades 15% off');
     console.assert(/^\d{4}-\d{2}-\d{2}$/.test(today()), 'daily date format');
