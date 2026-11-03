@@ -530,7 +530,61 @@ def thumb_painted(src=PARTS + 'thumb-art.png', cx=740, y=58, tsize=120):
     return img
 
 
+def grade_to_game(img):
+    """Grade painted art into Terraform's world: a dusk sky (navy at the top with pixel stars, amber at the horizon, amber-lit
+    clouds), olive-moss greens instead of candy green, navy shadows and amber highlights."""
+    import numpy as np
+    a = np.asarray(img.convert('RGB')).astype(np.float32) / 255
+    h, w, _ = a.shape
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    lum = .3 * r + .59 * g + .11 * b
+    yy = np.linspace(0, 1, h)[:, None] * np.ones((1, w))
+    sat = a.max(axis=2) - a.min(axis=2)
+    cloud = (sat < .22) & (lum > .4) & (yy < .62)  # white-grey clouds, mid-tones included so they stay whole
+    sky = (b > r + .12) & (b > g + .05) & (yy < .62) & ~cloud  # the blue sky
+    # dusk sky: navy at the top, violet, then amber at the horizon
+    t = np.clip(yy / .58, 0, 1)[..., None]
+    top, midc, horz = np.array([.04, .05, .11]), np.array([.17, .14, .27]), np.array([.80, .44, .22])
+    dusk = np.where(t < .6, top + (midc - top) * (t / .6), midc + (horz - midc) * ((t - .6) / .4))
+    dusk = dusk * (.85 + .3 * lum[..., None])
+    out = np.where(sky[..., None], dusk, a)
+    # clouds: amber-lit tops, violet undersides
+    cl = np.clip((lum - .4) / .6, 0, 1)[..., None]
+    cloud_col = np.array([.36, .26, .40]) + (np.array([1.0, .74, .45]) - np.array([.36, .26, .40])) * cl ** 1.4
+    out = np.where(cloud[..., None], cloud_col, out)
+    # the land: less candy, greens toward olive, navy shadows, amber highlights
+    land = ~(sky | cloud)
+    L = (.3 * out[..., 0] + .59 * out[..., 1] + .11 * out[..., 2])[..., None]
+    desat = L + (out - L) * .62
+    greenish = ((out[..., 1] > out[..., 0] + .05) & (out[..., 1] > out[..., 2]))[..., None]
+    desat = np.where(greenish, desat * np.array([1.02, .92, .7]), desat)
+    tone = np.where(L < .5, desat + (np.array([.05, .06, .13]) - desat) * (1 - L / .5) * .35, desat + (np.array([1.0, .78, .5]) - desat) * ((L - .5) / .5) * .22)
+    out = np.where(land[..., None], tone, out)
+    # warm light from the horizon, a vignette
+    vy, vx = np.mgrid[0:h, 0:w]
+    d = np.sqrt(((vx - w / 2) / (w * .62)) ** 2 + ((vy - h / 2) / (h * .62)) ** 2)
+    out = out * (1 - np.clip((d - .55) / .6, 0, 1)[..., None] * .55)
+    img = Image.fromarray((np.clip(out, 0, 1) * 255).astype(np.uint8))
+    # pixel stars coming out in the dark top of the sky, the size of the art's pixels
+    px = img.load(); rnd = random.Random(3)
+    for _ in range(140):
+        x, y = rnd.randrange(w - 3), rnd.randrange(int(h * .3))
+        if sky[y, x] and sky[y + 2, x + 2]:
+            c = (239, 232, 218) if rnd.random() < .7 else (255, 214, 150)
+            s_ = 3 if rnd.random() < .2 else 2
+            for dx in range(s_):
+                for dy in range(s_): px[x + dx, y + dy] = c
+    return img
+
+
+def thumb_game(src=PARTS + 'thumb-art.png'):
+    """The painted key art graded into Terraform's dusk palette, with the game's title treatment (cream, amber rule, tracked caps)."""
+    img = grade_to_game(Image.open(src).convert('RGB').resize((1280, 720), Image.LANCZOS))
+    title(img, 742, 44, 120, 'OFFICIAL TRAILER', 26, align='center', gap=12)
+    return img
+
+
 if __name__ == '__main__':
     v = sys.argv[1] if len(sys.argv) > 1 else 'A'
-    img = {'A': variant_a, 'B': variant_b, 'C': variant_c, 'D': variant_d, 'T': thumb_split, 'W': thumb_wide, 'P': thumb_painted}[v]()
+    img = {'A': variant_a, 'B': variant_b, 'C': variant_c, 'D': variant_d, 'T': thumb_split, 'W': thumb_wide, 'P': thumb_painted, 'G': thumb_game}[v]()
     img.save(sys.argv[2] if len(sys.argv) > 2 else f'{HERE}/../itch/cover-{v}.png')
