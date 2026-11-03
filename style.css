@@ -52,11 +52,11 @@ html.calm #goal.ready { animation: none; }
 #heal::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent calc(25% - 1px), var(--dim) 0 calc(25% + 1px), transparent 0 calc(50% - 1px), var(--dim) 0 calc(50% + 1px), transparent 0 calc(75% - 1px), var(--dim) 0 calc(75% + 1px), transparent 0); }
 #healtxt { grid-area: txt; color: var(--soft); white-space: nowrap; }
 #healtxt b { font-weight: normal; color: var(--line); }
-@media (max-width: 700px) { #world { grid-template-columns: 1fr; justify-content: stretch; grid-template-areas: "info" "bar" "txt"; } } /* narrow: name, bar, then what it means */
+@media (max-width: 700px) and (min-height: 501px) { #world { grid-template-columns: 1fr; justify-content: stretch; grid-template-areas: "info" "bar" "txt"; } } /* narrow: name, bar, then what it means */
 @media (max-height: 500px) { #top { flex-direction: row; justify-content: center; gap: 16px; padding-right: calc(68px + env(safe-area-inset-right)); } #life { font-size: 1.8rem; } #hud { white-space: nowrap; } } /* landscape phones: one row, so the planet keeps the height */
 #bar { position: relative; display: flex; justify-content: center; gap: 8px; padding: 8px 12px calc(12px + env(safe-area-inset-bottom)); }
 .tile { position: relative; flex: 1 1 0; max-width: 64px; height: 58px; background: var(--bg); display: grid; place-items: center; }
-.tile img { image-rendering: pixelated; max-width: 100%; max-height: 46px; } /* shrink only when a tile is narrower than the icon */
+.tile img { image-rendering: pixelated; width: 88%; height: 46px; object-fit: contain; } /* the machines are small in the scene: show them big here */
 .tile.sel { box-shadow: inset 0 -3px var(--acc); background: var(--fill); }
 #ttile img { width: 27px; } /* 9px icon at 3x */
 #ttile { position: absolute; bottom: calc(12px + env(safe-area-inset-bottom)); right: calc(12px + env(safe-area-inset-right)); width: 64px; max-width: none; } /* talents: bottom-right corner, apart from the systems */

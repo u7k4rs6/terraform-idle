@@ -183,21 +183,23 @@ const diagLight = (x, y, w, h) => 1 - (x / w + y / h) / 2; // sun from the top-l
 // ---------- machines: painted in materials, then shaded ----------
 // Each machine is drawn with material inks (H hull, S trim, X special such as lava or plasma: per machine; M metal, D dark metal,
 // K near-black, G glass, R rock, W white-hot, A glowing accent: shared). shade() turns each material into a five-tone ramp
-// with bevels (lit top-left edges, dark bottom-right), dither and noise. A keeps the palette's exact accent pair, so recolour()
+// with a dark rim, dim bevels, dither, grime and rust. A keeps the palette's exact accent pair, so recolour()
 // can repaint it for each Mark.
 const INK = { H: '#ff0000', S: '#00ff00', X: '#0000ff', M: '#ffff00', D: '#ff00ff', K: '#00ffff', G: '#800000', R: '#008000', W: '#000080', A: '#808000' };
 const INK_OF = Object.fromEntries(Object.entries(INK).map(([m, h]) => [rgb(h).join(), m]));
-const MAT = { M: '#a7adb9', D: '#4c5262', K: '#262a34', G: '#7fc4e6', R: '#8e7d6c', W: '#fff6e0' };
-function mpen(g) { // whole-pixel shapes only (no anti-aliasing), so every pixel keeps its exact ink
-  const put = (x, y, w, h, m) => { g.fillStyle = INK[m]; g.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h))); };
+const MAT = { M: '#6c6e74', D: '#33353b', K: '#18191d', G: '#4f8597', R: '#5c5046', W: '#ffe2b0' }; // worn gunmetal, not chrome
+const ART_K = .65; // machines are drawn at 65% of their design grid: small war machines around a big planet
+function mpen(g, k = 1) { // whole-pixel shapes only (no anti-aliasing), so every pixel keeps its exact ink; k: drawing scale
+  const raw = (x, y, w, h, m) => { g.fillStyle = INK[m]; g.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h))); };
+  const put = k === 1 ? raw : (x, y, w, h, m) => { const x0 = Math.round(x * k), y0 = Math.round(y * k); raw(x0, y0, Math.round((x + w) * k) - x0, Math.round((y + h) * k) - y0, m); };
   const p = {
     rect: (x, y, w, h, m) => put(x, y, w, h, m),
-    dot: (x, y, m) => put(x, y, 1, 1, m),
+    dot: (x, y, m) => raw(x * k, y * k, 1, 1, m),
     line(x0, y0, x1, y1, m) {
-      x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+      x0 = Math.round(x0 * k); y0 = Math.round(y0 * k); x1 = Math.round(x1 * k); y1 = Math.round(y1 * k);
       const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
       for (let e = dx + dy; ; ) {
-        put(x0, y0, 1, 1, m);
+        raw(x0, y0, 1, 1, m);
         if (x0 === x1 && y0 === y1) break;
         const e2 = 2 * e;
         if (e2 >= dy) { e += dy; x0 += sx; }
@@ -205,20 +207,22 @@ function mpen(g) { // whole-pixel shapes only (no anti-aliasing), so every pixel
       }
     },
     oval(cx, cy, rx, ry, m, top = false) { // filled ellipse (top: upper half only)
-      for (let dy = -ry; dy <= (top ? 0 : ry); dy++) { const dx = Math.round(rx * Math.sqrt(Math.max(0, 1 - (dy / (ry + .5)) ** 2))); put(cx - dx, cy + dy, dx * 2 + 1, 1, m); }
+      cx = Math.round(cx * k); cy = Math.round(cy * k); rx *= k; ry = Math.round(ry * k);
+      for (let dy = -ry; dy <= (top ? 0 : ry); dy++) { const dx = Math.round(rx * Math.sqrt(Math.max(0, 1 - (dy / (ry + .5)) ** 2))); raw(cx - dx, cy + dy, dx * 2 + 1, 1, m); }
     },
     circ: (cx, cy, r, m, top) => p.oval(cx, cy, r, r, m, top),
     arc(cx, cy, rx, ry, from, to, m) { // 1px elliptical arc
       const n = Math.ceil((rx + ry) * 3);
-      for (let i = 0; i <= n; i++) { const a = from + (to - from) * i / n; put(cx + Math.cos(a) * rx, cy + Math.sin(a) * ry, 1, 1, m); }
+      for (let i = 0; i <= n; i++) { const a = from + (to - from) * i / n; raw((cx + Math.cos(a) * rx) * k, (cy + Math.sin(a) * ry) * k, 1, 1, m); }
     },
     poly(pts, m) { // scanline fill, sampled at pixel centres
+      pts = pts.map(([x, y]) => [x * k, y * k]);
       const ys = pts.map(q => q[1]);
       for (let y = Math.floor(Math.min(...ys)); y <= Math.ceil(Math.max(...ys)); y++) {
         const yc = y + .5, xs = [];
         pts.forEach(([x0, y0], i) => { const [x1, y1] = pts[(i + 1) % pts.length]; if ((y0 <= yc) !== (y1 <= yc)) xs.push(x0 + (yc - y0) / (y1 - y0) * (x1 - x0)); });
         xs.sort((a, b) => a - b);
-        for (let k = 0; k + 1 < xs.length; k += 2) { const a = Math.round(xs[k]), b = Math.round(xs[k + 1]); if (b > a) put(a, y, b - a, 1, m); }
+        for (let i = 0; i + 1 < xs.length; i += 2) { const a = Math.round(xs[i]), b = Math.round(xs[i + 1]); if (b > a) raw(a, y, b - a, 1, m); }
       }
     },
     rot(ox, oy, a, k = 1) { // the same shapes in a rotated, scaled local frame
@@ -233,9 +237,9 @@ function mpen(g) { // whole-pixel shapes only (no anti-aliasing), so every pixel
   };
   return p;
 }
-const paint = (w, h, fn) => { const c = mk(w, h); fn(mpen(c.getContext('2d', { willReadFrequently: true }))); return c; };
-const ramp = h => { const b = rgb(h), mix = (t, k) => b.map((v, i) => Math.round(v + (t[i] - v) * k)); const W3 = [255, 255, 255], K3 = [8, 10, 18];
-  return [mix(W3, .5), mix(W3, .22), b, mix(K3, .32), mix(K3, .58)]; };
+const paint = (w, h, fn) => { const c = mk(Math.round(w * ART_K), Math.round(h * ART_K)); fn(mpen(c.getContext('2d', { willReadFrequently: true }), ART_K)); return c; };
+const ramp = h => { const b = rgb(h), mix = (t, k) => b.map((v, i) => Math.round(v + (t[i] - v) * k)); const W3 = [236, 222, 196], K3 = [10, 8, 8]; // dim warm highlights, deep shadows
+  return [mix(W3, .3), mix(W3, .1), b, mix(K3, .42), mix(K3, .7)]; };
 function shade(src, pal, seed) {
   const w = src.width, h = src.height, d = src.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data, c = mk(w, h), g = c.getContext('2d'), im = g.createImageData(w, h), o = im.data;
   const mat = new Array(w * h).fill(null);
@@ -251,11 +255,15 @@ function shade(src, pal, seed) {
     else {
       const up = at(x, y - 1) !== m, lf = at(x - 1, y) !== m, dn = at(x, y + 1) !== m, rt = at(x + 1, y) !== m;
       let t = 2 - Math.round((L - .5) * 2.2 + (th - .5) * .9 + (n - .5) * .35);
-      if ((up || lf) && !(dn || rt)) t = Math.min(t, 1) - (up && lf ? 1 : 0); // lit edge
+      const rim = [at(x, y - 1), at(x - 1, y), at(x, y + 1), at(x + 1, y)].includes(null);
+      if (rim && m !== 'X' && m !== 'W') t = Math.max(t, 3); // a heavy dark silhouette instead of shiny edges
+      else if ((up || lf) && !(dn || rt)) t = Math.min(t, 2); // lit edge: no shine
       else if ((dn || rt) && !(up || lf)) t = Math.max(t, 3) + (dn && rt ? 1 : 0); // shadow edge
       if (m === 'G' && (x + y * 2) % 9 === 0) t = 0; // glass glint
+      if (m !== 'X' && m !== 'W' && m !== 'G') { const g2 = hash(x, y, seed + 7); if (g2 < .14) t++; else if (g2 > .97) t--; if (hash(x >> 1, y >> 2, seed + 3) < .06) t++; } // grime specks and streaks
       if (m === 'X' || m === 'W') t = Math.min(t, 2); // glowing materials stay bright
       col = R[m][Math.max(0, Math.min(4, t))];
+      if ((m === 'H' || m === 'M' || m === 'D') && hash(x >> 1, y, seed + 11) < .07) col = col.map((v, i) => Math.round(v * .6 + [92, 48, 24][i] * .4)); // rust
     }
     o[j] = col[0]; o[j + 1] = col[1]; o[j + 2] = col[2]; o[j + 3] = 255;
   }
@@ -266,14 +274,15 @@ function shade(src, pal, seed) {
 // Where shots leave each sprite, relative to its centre (default: the centre).
 const MUZZLE = { laser: [-30, 16], striker: [-29, 16], coil: [0, 19], asteroid: [25, 14], volcano: [6, 10], forge: [8, -16], antimatter: [0, -5],
   lance: [-30, 17], ion: [0, 15], pod: [10, 2], driver: [11, -12], hydro: [14, -13], star: [0, -1] }; // cannons: the tip, local (-25|-26, 0) rotated and scaled
-// Each machine's own colours: H hull, S trim, X its special material.
+// Each machine's own colours: H hull, S trim, X its special material. A DOOM-ish arsenal: worn gunmetal, rust, olive drab,
+// dried blood and bone; only what burns stays hot.
 const PAL = {
-  laser: { H: '#d8434e', S: '#efe6da', X: '#ff8a8a' }, striker: { H: '#66789a', S: '#e8892e' }, lance: { H: '#b84a9c', S: '#4a2a5e', X: '#d49cff' },
-  solar: { H: '#d9a441', S: '#3a5fae' }, coil: { H: '#6457d0', S: '#d08a46', X: '#9fe8ff' }, ion: { H: '#e3e7ee', S: '#2fa8d4', X: '#8fe6ff' },
-  drone: { H: '#5aa64c', S: '#e9e3c8' }, asteroid: { H: '#e0b034', S: '#2b2e36' }, pod: { H: '#72883c', S: '#e6c840', X: '#a6ec5c' },
-  rocket: { H: '#efebe3', S: '#cc453b' }, volcano: { H: '#e07a2c', S: '#2b2e36', X: '#ff8a2a' }, driver: { H: '#4d78b8', S: '#efebe3' },
-  bio: { H: '#e6e1d3', S: '#4caf62', X: '#3f9e46' }, forge: { H: '#a95c36', S: '#e9e3d6', X: '#ff9a4a' }, hydro: { H: '#2f98b4', S: '#e9e3d6', X: '#6fd4ff' },
-  core: { H: '#2aa89c', S: '#e8c25a' }, antimatter: { H: '#5b3f92', S: '#b46cff', X: '#efe2ff' }, star: { H: '#c99a2e', S: '#8d5a22', X: '#ffd85a' },
+  laser: { H: '#7a3630', S: '#9c9488', X: '#ff5232' }, striker: { H: '#4c535c', S: '#9a5a26' }, lance: { H: '#563648', S: '#2a2028', X: '#b46ee6' },
+  solar: { H: '#86683a', S: '#34465a' }, coil: { H: '#44405c', S: '#86562e', X: '#7ad2ec' }, ion: { H: '#86888e', S: '#2c6276', X: '#62d0ee' },
+  drone: { H: '#4a5632', S: '#8a8670' }, asteroid: { H: '#86682c', S: '#26282c' }, pod: { H: '#4a5430', S: '#86742e', X: '#86bc44' },
+  rocket: { H: '#96928a', S: '#782a24' }, volcano: { H: '#7e4624', S: '#26282c', X: '#ff621a' }, driver: { H: '#3a4e66', S: '#96928a' },
+  bio: { H: '#8a8678', S: '#3a6a44', X: '#36763a' }, forge: { H: '#683a24', S: '#8a867c', X: '#ff7426' }, hydro: { H: '#2c5862', S: '#8a867c', X: '#56b4d6' },
+  core: { H: '#2c605a', S: '#967a38' }, antimatter: { H: '#3a2c54', S: '#7046a0', X: '#e6d6ff' }, star: { H: '#7a5e2e', S: '#563818', X: '#ffc244' },
 };
 const ART = {
   // orbital laser angled down-left at the planet: red hull with heat-sink fins, energy cells, a white stripe, a glass lens
@@ -437,7 +446,7 @@ const ART = {
 };
 // Marks: a system's look grows with its best upgrade (Lv 10 / 25 / 50): the amber accents turn cyan, violet, then white (Mark IV also glows).
 const MARK_AT = [10, 25, 50], MARK = ['I', 'II', 'III', 'IV'];
-const MARKS = [['#8fe3ff', '#4a90b0'], ['#d9a6ff', '#8452b0'], ['#ffffff', '#9aa3c4']].map(m => m.map(rgb));
+const MARKS = [['#ff9a3d', '#a8461c'], ['#ff4b3a', '#8a1c18'], ['#fff0c4', '#c8843a']].map(m => m.map(rgb)); // heating up: orange, blood red, white-hot
 const markOf = s => MARK_AT.filter(n => Math.max(...S.L[s]) >= n).length;
 function recolour(src, [light, dark]) { // grit()'s accent pair -> this mark's pair
   const c = mk(src.width, src.height), g = c.getContext('2d');
@@ -625,7 +634,7 @@ const grainPat = out.createPattern((() => {
 // Sky systems sit on one ring just outside the atmosphere, evenly spaced across the upper half (angle in degrees,
 // 0 = right, -90 = straight up). Ground systems stand on the ground line instead, at x planet radii from centre:
 // only working buildings on the ground, no filler.
-const ORBIT = 1.32, GX = 1.2;
+const ORBIT = 1.42, WIDE = 1.7, GX = 1.2; // orbit radius of the top system (it sets the planet's size) and of the two side ones (well clear, where there is room)
 const SLOT = [
   { a: -30 },                 // laser: upper right, aimed down at the planet
   { a: -90 },                 // solar mirror: straight above
@@ -634,7 +643,7 @@ const SLOT = [
   { x: -GX, ground: true },   // bio seeder: greenhouse on the left
   { x: 0, ground: true },     // terra core: reactor in front of the planet
 ];
-for (const sl of SLOT) if (!sl.ground) { const r = sl.a * Math.PI / 180; sl.x = Math.cos(r) * ORBIT; sl.y = Math.sin(r) * ORBIT; }
+for (const sl of SLOT) if (!sl.ground) { const r = sl.a * Math.PI / 180, o = sl.a === -90 ? ORBIT : WIDE; sl.x = Math.cos(r) * o; sl.y = Math.sin(r) * o; }
 const HIT = 20; // touch radius in scene pixels (40+ CSS px), a bit larger than the sprites
 let K, PX, W, H, R0, R, CX, CY, GY, TOP, SIDE, FY = 1, layoutH = 0, city = [], cityCv, cityN = -1, ridge = [];
 const hudH = () => $('top').offsetHeight + $('dock').offsetHeight; // the layout depends on these heights
@@ -702,7 +711,7 @@ function sysPos(s, t) {
   if (!sl.ground) y = Math.max(TOP + h / 2 + 10, y); // room for the label above
   return [Math.round(x), Math.round(y)];
 }
-const muzzle = s => { const [x, y] = sysPos(s, last), [dx, dy] = MUZZLE[SYS[s].id] || [0, 0]; return [x + dx, y + dy]; };
+const muzzle = s => { const [x, y] = sysPos(s, last), [dx, dy] = MUZZLE[SYS[s].id] || [0, 0]; return [x + Math.round(dx * ART_K), y + Math.round(dy * ART_K)]; };
 
 // Dot-grid stars like a printed star chart.
 const stars = []; let starsIn = []; // starsIn: the ones on this screen, refreshed by layout()
