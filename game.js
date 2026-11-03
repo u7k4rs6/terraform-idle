@@ -188,7 +188,7 @@ const diagLight = (x, y, w, h) => 1 - (x / w + y / h) / 2; // sun from the top-l
 const INK = { H: '#ff0000', S: '#00ff00', X: '#0000ff', M: '#ffff00', D: '#ff00ff', K: '#00ffff', G: '#800000', R: '#008000', W: '#000080', A: '#808000' };
 const INK_OF = Object.fromEntries(Object.entries(INK).map(([m, h]) => [rgb(h).join(), m]));
 const MAT = { M: '#6c6e74', D: '#33353b', K: '#18191d', G: '#4f8597', R: '#5c5046', W: '#ffe2b0' }; // worn gunmetal, not chrome
-const ART_K = .65; // machines are drawn at 65% of their design grid: small war machines around a big planet
+const ART_K = Math.min(screen.width, screen.height) < 600 ? .7 : .65; // machines at 70% (phones) / 65% of their design grid: small war machines around a big planet
 function mpen(g, k = 1) { // whole-pixel shapes only (no anti-aliasing), so every pixel keeps its exact ink; k: drawing scale
   const raw = (x, y, w, h, m) => { g.fillStyle = INK[m]; g.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h))); };
   const put = k === 1 ? raw : (x, y, w, h, m) => { const x0 = Math.round(x * k), y0 = Math.round(y * k); raw(x0, y0, Math.round((x + w) * k) - x0, Math.round((y + h) * k) - y0, m); };
