@@ -127,8 +127,9 @@ def sparks(img, x, y, n, cols, spread, seed):
             px[qx, qy] = rnd.choice(cols) + (255,)
 
 
-def finish(art, scale):
+def finish(art, scale, size=(W, H)):
     """Scale the art grid up with whole pixels, then a soft vignette (no grain: the pixel art carries the texture)."""
+    W, H = size
     big = art.resize((art.width * scale, art.height * scale), Image.NEAREST).convert('RGB')
     big = big.crop((0, 0, W, H))
     vig = Image.new('L', (W, H))
@@ -248,8 +249,8 @@ def variant_c():
 
 class Glow:
     """Light on a full-resolution layer: blurred and added over the scaled pixel art, so beams and blasts light up the scene."""
-    def __init__(self, k):
-        self.k, self.im = k, Image.new('RGB', (W, H))
+    def __init__(self, k, size=(W, H)):
+        self.k, self.im = k, Image.new('RGB', size)
         self.d = ImageDraw.Draw(self.im)
 
     def line(self, p0, p1, col, w):
@@ -396,7 +397,74 @@ def variant_d():
     return img
 
 
+def word(art, text, x, y, size, top, bottom, outline=(8, 8, 12), align='left'):
+    """A big word on the art grid: pixel letters with a vertical colour ramp and a thick dark outline (reads at thumbnail size)."""
+    f = ImageFont.truetype(FONT, size)
+    w = int(f.getlength(text)) + 8
+    m = Image.new('L', (w, size + 8))
+    ImageDraw.Draw(m).text((4, 0), text, font=f, fill=255)
+    m = m.point(lambda v: 255 if v > 127 else 0)
+    bold = m.copy(); bold.paste(255, None, m.transform(m.size, Image.AFFINE, (1, 0, -1, 0, 1, 0)))  # one pixel wider strokes
+    m = bold
+    mp = m.load()
+    x0 = x - w if align == 'right' else x - w // 2 if align == 'center' else x
+    px = art.load()
+    # outline: every pixel within 2 of a letter
+    for yy in range(m.height):
+        for xx in range(w):
+            if any(0 <= xx + dx < w and 0 <= yy + dy < m.height and mp[xx + dx, yy + dy] for dx in (-2, -1, 0, 1, 2) for dy in (-2, -1, 0, 1, 2)):
+                gx, gy = x0 + xx, y + yy
+                if 0 <= gx < art.width and 0 <= gy < art.height: px[gx, gy] = outline + (255,)
+    for yy in range(m.height):
+        k = yy / max(1, size)
+        col = mix(top, bottom, min(1, k + (BAYER[yy & 3][0] / 16 - .5) * .1))
+        for xx in range(w):
+            if mp[xx, yy]:
+                gx, gy = x0 + xx, y + yy
+                if 0 <= gx < art.width and 0 <= gy < art.height: px[gx, gy] = col + (255,)
+    return x0, w
+
+
+def thumb_split():
+    """YouTube thumbnail: DEAD | ALIVE. One planet split down the middle, an orbital beam slamming the seam, the commander in front."""
+    gw, gh, k, size = 320, 180, 4, (1280, 720)
+    art = sky(gw, gh, (4, 5, 9), (12, 10, 16), glow=(250, 80, 150, (40, 60, 30), .45))
+    layer, seam = planet(11, 198, 200, gw, gh, 0.0, front_seed=7, shift=0, light=(.9, -.4))
+    art.alpha_composite(layer)
+    glow = Glow(k, size)
+    for (x, y) in seam[::5]:
+        glow.dot((x, y), (230, 120, 40), 1.4)
+    hit = (198, 68)
+    # the orbital beam: a thick white-hot column with amber edges, slamming the seam
+    beam(art, glow, (198, -4), hit, (255, 252, 240), (255, 170, 60), 4)
+    glow.line((198, -4), hit, (255, 190, 90), 14)
+    # impact: a pixel starburst, a shockwave ring hugging the planet, sparks
+    px = art.load()
+    for a in range(0, 360, 45):
+        ln = 38 if a % 90 == 0 else 20
+        for t in range(4, ln):
+            x, y = round(hit[0] + math.cos(math.radians(a)) * t), round(hit[1] + math.sin(math.radians(a)) * t * .7)
+            if 0 <= x < gw and 0 <= y < gh: px[x, y] = ((255, 250, 235) if t < ln * .6 else (255, 181, 71)) + (255,)
+    for a in range(0, 360, 2):
+        x, y = round(hit[0] + math.cos(math.radians(a)) * 46), round(hit[1] + 6 + math.sin(math.radians(a)) * 9)
+        if 0 <= x < gw and 0 <= y < gh and a % 6: px[x, y] = (255, 214, 160, 255)
+    impact(art, glow, hit, (255, 181, 71), 6, 3)
+    sparks(art, hit[0], hit[1], 120, [(255, 250, 235), (255, 181, 71), (220, 90, 40)], 34, 5)
+    glow.dot(hit, (255, 150, 50), 34)
+    glow.dot(hit, (255, 235, 200), 12)
+    # the words either side of the beam
+    word(art, 'DEAD', 189, 2, 46, (222, 218, 210), (112, 108, 106), align='right')
+    word(art, 'ALIVE', 207, 2, 46, (214, 255, 150), (50, 196, 78))
+    # the commander in front, rim-lit
+    vos = part('vos')
+    art.alpha_composite(vos, (-8, 48))
+    # the game's name, small, bottom right
+    word(art, 'TERRAFORM', 316, 160, 16, (255, 196, 90), (230, 140, 40), align='right')
+    img = finish(art, k, size)
+    return glow.apply(img, blur=14, strength=.75)
+
+
 if __name__ == '__main__':
     v = sys.argv[1] if len(sys.argv) > 1 else 'A'
-    img = {'A': variant_a, 'B': variant_b, 'C': variant_c, 'D': variant_d}[v]()
+    img = {'A': variant_a, 'B': variant_b, 'C': variant_c, 'D': variant_d, 'T': thumb_split}[v]()
     img.save(sys.argv[2] if len(sys.argv) > 2 else f'{HERE}/../itch/cover-{v}.png')
