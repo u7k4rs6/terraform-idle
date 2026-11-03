@@ -2,7 +2,7 @@
 # Parts come from trailer/out/cover/ (planet renders and machine sprites exported from the game at full design size).
 # Usage: python3 cover.py A|B|C [out.png]
 import json, math, random, sys
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 HERE = __file__.rsplit('/', 1)[0] or '.'
 PARTS, FONT = f'{HERE}/out/cover/', f'{HERE}/out/VT323.ttf'
@@ -246,7 +246,157 @@ def variant_c():
     return img
 
 
+class Glow:
+    """Light on a full-resolution layer: blurred and added over the scaled pixel art, so beams and blasts light up the scene."""
+    def __init__(self, k):
+        self.k, self.im = k, Image.new('RGB', (W, H))
+        self.d = ImageDraw.Draw(self.im)
+
+    def line(self, p0, p1, col, w):
+        self.d.line([(p0[0] * self.k, p0[1] * self.k), (p1[0] * self.k, p1[1] * self.k)], fill=col, width=int(w * self.k))
+
+    def dot(self, p, col, r):
+        x, y = p[0] * self.k, p[1] * self.k
+        self.d.ellipse((x - r * self.k, y - r * self.k, x + r * self.k, y + r * self.k), fill=col)
+
+    def apply(self, img, blur=22, strength=1.0):
+        soft = self.im.filter(ImageFilter.GaussianBlur(blur))
+        wide = self.im.filter(ImageFilter.GaussianBlur(blur * 3))
+        lit = ImageChops.add(soft, wide.point(lambda v: int(v * .6)))
+        if strength != 1: lit = lit.point(lambda v: int(v * strength))
+        return ImageChops.add(img, lit)
+
+
+def beam(art, glow, p0, p1, core, edge, w=1):
+    """A pixel beam: a white-hot core with coloured edges, and its light on the glow layer."""
+    px = art.load()
+    n = int(max(abs(p1[0] - p0[0]), abs(p1[1] - p0[1])))
+    nx, ny = -(p1[1] - p0[1]), p1[0] - p0[0]
+    ln = math.hypot(nx, ny) or 1
+    nx, ny = nx / ln, ny / ln
+    for i in range(n + 1):
+        t = i / max(1, n)
+        x, y = p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t
+        for o in range(-w, w + 1):
+            qx, qy = round(x + nx * o), round(y + ny * o)
+            if 0 <= qx < art.width and 0 <= qy < art.height:
+                px[qx, qy] = (core if abs(o) < max(1, w) * .5 else edge) + (255,)
+    glow.line(p0, p1, edge, w * 2 + 3)
+    glow.line(p0, p1, core, max(1, w))
+
+
+def impact(art, glow, p, col, size, seed):
+    px = art.load()
+    x, y = round(p[0]), round(p[1])
+    for dx in range(-size, size + 1):
+        for dy in range(-size, size + 1):
+            d = math.hypot(dx, dy)
+            if d <= size and 0 <= x + dx < art.width and 0 <= y + dy < art.height:
+                px[x + dx, y + dy] = ((255, 250, 235) if d < size * .5 else col) + (255,)
+    sparks(art, x, y, 14 + size * 6, [(255, 244, 214), col, INK], size * 4 + 4, seed)
+    glow.dot(p, col, size * 2 + 3)
+    glow.dot(p, (255, 240, 210), size * .6 + .5)
+
+
+def blast(art, glow, p, r, seed):
+    """A warhead going off: a white core, burning rings, a shockwave and debris flung outward."""
+    px = art.load()
+    rnd = random.Random(seed)
+    x0, y0 = p
+    for y in range(int(y0 - r * 1.6), int(y0 + r * 1.6)):
+        for x in range(int(x0 - r * 1.6), int(x0 + r * 1.6)):
+            if not (0 <= x < art.width and 0 <= y < art.height): continue
+            d = math.hypot(x - x0, (y - y0) * 1.1) + (vnoise(x, y, 3, seed) - .5) * r * .5
+            if d < r * .35: col = (255, 250, 230)
+            elif d < r * .6: col = (255, 214, 120)
+            elif d < r * .85: col = (255, 140, 50)
+            elif d < r: col = (190, 60, 30) if BAYER[y & 3][x & 3] / 16 < .7 else None
+            else: col = None
+            if col: px[x, y] = col + (255,)
+    for a in range(0, 360, 3):  # shockwave ring
+        rr = r * 1.45
+        x, y = round(x0 + math.cos(math.radians(a)) * rr), round(y0 + math.sin(math.radians(a)) * rr * .8)
+        if 0 <= x < art.width and 0 <= y < art.height and a % 9: px[x, y] = (255, 214, 160, 255)
+    for _ in range(46):  # debris
+        a, d = rnd.random() * 2 * math.pi, r * (1.1 + rnd.random() * 1.6)
+        x, y = round(x0 + math.cos(a) * d), round(y0 + math.sin(a) * d)
+        c = rnd.choice([(255, 181, 71), (220, 90, 40), (120, 100, 90), INK])
+        for t in range(rnd.randint(1, 3)):
+            qx, qy = round(x - math.cos(a) * t), round(y - math.sin(a) * t)
+            if 0 <= qx < art.width and 0 <= qy < art.height: px[qx, qy] = c + (255,)
+    glow.dot(p, (200, 80, 30), r * 1.7)
+    glow.dot(p, (255, 200, 140), r * .6)
+
+
+def missile(art, glow, p0, p1, seed):
+    """A missile streaking in on a smoke trail."""
+    px = art.load()
+    rnd = random.Random(seed)
+    n = int(max(abs(p1[0] - p0[0]), abs(p1[1] - p0[1])))
+    for i in range(n):
+        t = i / n
+        x, y = p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t + math.sin(t * 9 + seed) * 1.5 * (1 - t)
+        if rnd.random() < .75:
+            g = 60 + int(80 * t)
+            qx, qy = round(x + rnd.uniform(-1, 1) * (1 - t) * 2), round(y + rnd.uniform(-1, 1) * (1 - t) * 2)
+            if 0 <= qx < art.width and 0 <= qy < art.height: px[qx, qy] = (g, g - 6, g - 10, 255)
+    hx, hy = round(p1[0]), round(p1[1])
+    for dx, dy, c in [(0, 0, (230, 226, 216)), (-1, 0, (150, 150, 140)), (-2, 0, (200, 60, 40)), (-3, 0, (255, 181, 71)), (-4, 0, (255, 240, 200))]:
+        ang = math.atan2(p1[1] - p0[1], p1[0] - p0[0])
+        qx, qy = round(hx + math.cos(ang) * -dx * -1), round(hy + math.sin(ang) * -dx * -1)
+        qx, qy = round(hx + math.cos(ang) * dx), round(hy + math.sin(ang) * dx)
+        if 0 <= qx < art.width and 0 <= qy < art.height: px[qx, qy] = c + (255,)
+    glow.dot((p1[0] - math.cos(math.atan2(p1[1] - p0[1], p1[0] - p0[0])) * 4, p1[1] - math.sin(math.atan2(p1[1] - p0[1], p1[0] - p0[0])) * 4), (255, 150, 60), 4)
+
+
+def variant_d():
+    """The barrage: five machines from the arsenal firing on the healing front at once, a warhead going off, missiles inbound."""
+    gw, gh, k = 315, 250, 4
+    art = sky(gw, gh, (5, 6, 11), (14, 12, 18), glow=(300, 170, 180, (70, 36, 24), .55))
+    layer, seam = planet(11, 252, 236, gw, gh, math.radians(18), front_seed=4, shift=58)
+    art.alpha_composite(layer)
+    glow = Glow(k)
+    for (x, y) in seam[::9]:  # the healing front gives off light
+        glow.dot((x, y), (200, 100, 40), 1.1)
+    front = sorted(seam, key=lambda p: p[1])
+    tgt = lambda f: front[int(len(front) * f)]
+    # a warhead hits the dead side
+    blast(art, glow, (150, 214), 12, 11)
+    # missiles inbound from the lower left
+    for i, (a, b) in enumerate([((-10, 236), (150, 214)), ((-10, 206), (130, 186)), ((20, 250), (162, 232))]):
+        missile(art, glow, a, b, i)
+    # machines (mirrored to face the planet) and what they fire
+    bomber, ion = part('m-bomber-0'), part('m-ion-2')
+    gat, lance, laser = part('m-gatling-2', True), part('m-lance-2', True), part('m-laser-2', True)
+    shots = [
+        (ion, (150, 100), (150, 100 + 15), (150, 158), (240, 250, 255), (98, 208, 238), 2),
+        (gat, (66, 118), (66 + 28, 118 + 16), None, None, None, 0),
+        (lance, (54, 168), (54 + 30, 168 + 17), tgt(.55), (255, 240, 255), (190, 120, 255), 2),
+        (laser, (100, 224), (100 + 30, 224 + 16), tgt(.93), (255, 245, 230), (255, 82, 50), 2),
+    ]
+    for spr, pos, m, to, core, edge, w in shots:
+        put(art, spr, *pos)
+        if to: beam(art, glow, m, to, core, edge, w); impact(art, glow, to, edge, 2 + w, pos[0])
+    # gatling: a hose of tracers walking across the front
+    for i, f in enumerate([.16, .22, .28, .34]):
+        t = tgt(f)
+        line(art, 66 + 28, 118 + 16, t[0], t[1], (255, 196, 90), every=3, on=3)
+        glow.line((66 + 28, 118 + 16), t, (255, 150, 50), 1.2)
+        impact(art, glow, t, (255, 181, 71), 1, 30 + i)
+    # bomber over the top of the planet, a stick of bombs falling
+    put(art, bomber, 276, 26)
+    for i in range(4):
+        bx, by = 270 + i * 3, 42 + i * 8
+        art.load()[bx, by] = (40, 42, 48, 255); art.load()[bx, by + 1] = (200, 64, 42, 255)
+        glow.dot((bx, by + 2), (255, 120, 50), .9)
+    impact(art, glow, (284, 80), (255, 181, 71), 2, 77)
+    img = finish(art, k)
+    img = glow.apply(img, blur=14, strength=.6)
+    title(img, 72, 54, 168, 'BRING DEAD WORLDS BACK TO LIFE', 30, gap=14)
+    return img
+
+
 if __name__ == '__main__':
     v = sys.argv[1] if len(sys.argv) > 1 else 'A'
-    img = {'A': variant_a, 'B': variant_b, 'C': variant_c}[v]()
+    img = {'A': variant_a, 'B': variant_b, 'C': variant_c, 'D': variant_d}[v]()
     img.save(sys.argv[2] if len(sys.argv) > 2 else f'{HERE}/../itch/cover-{v}.png')
