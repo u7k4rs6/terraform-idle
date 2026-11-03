@@ -60,7 +60,7 @@ html.calm #goal.ready { animation: none; }
 .tile.sel { box-shadow: inset 0 -3px var(--acc); background: var(--fill); }
 #ttile img { width: 27px; } /* 9px icon at 3x */
 #ttile { position: absolute; bottom: calc(12px + env(safe-area-inset-bottom)); right: calc(12px + env(safe-area-inset-right)); width: 64px; max-width: none; } /* talents: bottom-right corner, apart from the systems */
-@media (max-width: 640px) { #bar { padding-right: calc(84px + env(safe-area-inset-right)); } } /* narrow: keep the systems clear of it */
+@media (max-width: 640px) { #bar { gap: 4px; padding-left: 8px; padding-right: calc(80px + env(safe-area-inset-right)); } } /* narrow: keep the systems clear of it */
 /* embedded (itch.io): the host's fullscreen button sits bottom-right, so the talents tile moves to the bottom-left corner */
 html.embed #ttile { right: auto; left: calc(12px + env(safe-area-inset-left)); }
 @media (max-width: 640px) { html.embed #bar { padding-right: 12px; padding-left: calc(84px + env(safe-area-inset-left)); } }
@@ -85,6 +85,8 @@ html.embed #ttile { right: auto; left: calc(12px + env(safe-area-inset-left)); }
 .buy[aria-disabled="true"] { background: var(--bg); color: var(--soft); cursor: default; }
 .buy span { display: block; margin-top: 4px; }
 .fact { padding: 4px 16px 14px; font-size: .85rem; color: var(--soft); }
+#ptrait { padding: 8px 16px 0; font-size: .85rem; color: var(--soft); }
+#ptrait b { font-weight: normal; color: var(--acc); margin-right: 6px; }
 .fact:empty { display: none; }
 .arrow { width: 32px; height: 36px; flex: none; background: var(--bg); color: var(--soft); font-size: 1.2rem; } /* < > step between systems, beside the name */
 #phead { gap: 8px; }

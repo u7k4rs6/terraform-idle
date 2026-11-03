@@ -3,8 +3,8 @@
 // All the numbers and words: systems, prices, worlds, goals and the commander's briefing.
 // The engine (game.js) reads these; balance changes happen here.
 
-// Every system in the game. Each world fields six of them (LOADOUTS); a system's cost and output come from its
-// unlock slot (TIER), so any loadout paces the same. Each has 3 upgrades (max Lv 50):
+// Every system in the game. Each world fields eight of them (lineup); a system's cost and output come from its
+// unlock slot (TIER), so any lineup paces the same. Each has 3 upgrades (max Lv 50):
 // [0] +1 crew, [1] +25% output per level, [2] x1.08 output per level (compounding).
 const CATALOG = {
   laser: { name: 'Beam Spire', shot: 'beam', unit: 'gunner',
@@ -62,30 +62,95 @@ const CATALOG = {
   star: { name: 'Star Forge', shot: 'flare', unit: 'tech',
     ups: [['Plasma Tech', '+1 tech'], ['Denser Fuel', '+25% fusion'], ['Stellar Core', 'x1.08 forge output']],
     desc: 'A tiny captive star that bathes the whole world in warmth.', fact: 'In December 2022 a US laser lab got more energy out of a fusion reaction than its lasers put in, for the first time ever.' },
+  // fourth generation: the heavy arsenal
+  grav: { name: 'Graviton Anvil', shot: 'gravity', unit: 'warden',
+    ups: [['Gravity Warden', '+1 warden'], ['Dense Core', '+25% pull'], ['Tidal Lock', 'x1.08 anvil output']],
+    desc: 'Squeezes the crust with gravity to wring water and gas out of the rock.', fact: 'Jupiter squeezes its moon Io so hard that the tides heat its insides and keep about 400 volcanoes active.' },
+  bomber: { name: 'Cluster Bomber', shot: 'bombs', unit: 'bombardier',
+    ups: [['Bombardier', '+1 bombardier'], ['Fertilizer Charges', '+25% payload'], ['Carpet Runs', 'x1.08 bomber output']],
+    desc: 'Carpets the surface with charges packed with fertilizer and seed.', fact: 'Planes and drones have been used to reseed burned land by dropping seed balls from the air.' },
+  ribbon: { name: 'Magnetar Halo', shot: 'ribbon', unit: 'keeper',
+    ups: [['Field Keeper', '+1 keeper'], ['Superconducting Ring', '+25% field'], ['Dynamo Spin', 'x1.08 halo output']],
+    desc: 'Wraps the world in a magnetic field that shields its new air from the solar wind.', fact: 'Mars lost most of its air after its magnetic field died. NASA scientists have proposed a magnetic shield in space to give it one again.' },
+  gatling: { name: 'Ripsaw Gatling', shot: 'gatling', unit: 'feeder',
+    ups: [['Belt Feeder', '+1 feeder'], ['Spinning Barrels', '+25% rate'], ['Incendiary Rounds', 'x1.08 gatling output']],
+    desc: 'Hoses the crust with thousands of tiny seed-shell rounds a minute.', fact: 'A rotary cannon like the GAU-8 fires about 65 rounds every second.' },
+  harpoon: { name: 'Comet Harpoon', shot: 'harpoon', unit: 'winchman',
+    ups: [['Winchman', '+1 winchman'], ['Barbed Heads', '+25% catch'], ['Titan Chain', 'x1.08 harpoon output']],
+    desc: 'Spears passing ice and drags it down onto the planet.', fact: 'In 2014 the Philae lander was meant to anchor itself to comet 67P with harpoons. They never fired, and it bounced.' },
+  nanite: { name: 'Nanite Censer', shot: 'spray', unit: 'tender',
+    ups: [['Swarm Tender', '+1 tender'], ['Self-Replication', '+25% nanites'], ['Hive Code', 'x1.08 censer output']],
+    desc: 'Sprays clouds of nanites that grind bare rock into living soil.', fact: 'Lichens and microbes break rock into soil, but they can take centuries to make a single centimetre of it.' },
+  quake: { name: 'Quake Hammer', shot: 'quake', unit: 'smith',
+    ups: [['Hammer Smith', '+1 smith'], ['Heavier Head', '+25% force'], ['Resonance', 'x1.08 hammer output']],
+    desc: 'Pounds the ground until buried water and heat come up through the cracks.', fact: 'Marsquakes are real: NASA\'s InSight lander recorded more than 1,300 of them between 2018 and 2022.' },
+  mortar: { name: 'Napalm Mortar', shot: 'mortar', unit: 'gunner',
+    ups: [['Mortar Crew', '+1 gunner'], ['Hotter Mix', '+25% heat'], ['Firestorm', 'x1.08 mortar output']],
+    desc: 'Lobs burning shells that thaw the frozen ground.', fact: 'Mars\' south polar cap holds frozen carbon dioxide. Releasing all of it would thicken the air, but not nearly enough to breathe.' },
+  maser: { name: 'Maser Dish', shot: 'maser', unit: 'operator',
+    ups: [['Operator', '+1 operator'], ['Wider Dish', '+25% power'], ['Phase Lock', 'x1.08 maser output']],
+    desc: 'Cooks the crust with a focused beam of microwaves.', fact: 'The maser, a laser for microwaves, was built in 1953, seven years before the first laser.' },
+  silo: { name: 'Terra Warhead', shot: 'nuke', unit: 'officer',
+    ups: [['Launch Officer', '+1 officer'], ['Bigger Yield', '+25% yield'], ['Deep Penetrator', 'x1.08 warhead output']],
+    desc: 'Drops warheads on the poles to blast the ice into steam.', fact: 'Project Orion, in the 1950s, studied pushing a spaceship with a chain of small nuclear blasts.' },
+  spore: { name: 'Spore Tower', shot: 'spores', unit: 'gardener',
+    ups: [['Gardener', '+1 gardener'], ['Fatter Sacs', '+25% spores'], ['Wind Release', 'x1.08 tower output']],
+    desc: 'A grown tower that breathes clouds of spores into the new air.', fact: 'A single giant puffball mushroom can release several trillion spores.' },
+  bore: { name: 'Singularity Bore', shot: 'vortex', unit: 'theorist',
+    ups: [['Theorist', '+1 theorist'], ['Event Horizon', '+25% depth'], ['Hawking Flux', 'x1.08 bore output']],
+    desc: 'Drills down with a tiny contained black hole, freeing the heat of the core.', fact: 'A black hole with the mass of Mount Everest would be smaller than an atom.' },
 };
-// Unlock slots 0-2 hang in orbit, 3-5 stand on the ground (see SLOT). Each slot has three machines drawn for its spot:
-// 0 laser/striker/lance, 1 solar/coil/ion, 2 drone/asteroid/pod, 3 rocket/volcano/driver, 4 bio/forge/hydro, 5 core/antimatter/star.
-const TIER = [[100, 3], [1200, 20], [1.5e4, 140], [2e5, 1000], [2.5e6, 7000], [1.5e7, 40000]].map(([unlock, base]) => ({ unlock, base }));
+// Each machine's character. trait: a rule of its own (TRAITS); pace: seconds between shots relative to the others (under 1 fires
+// fast and light, over 1 slow and heavy: income per second is the same, each hit is bigger).
+const TRAITS = {
+  support: { name: 'Support', text: 'Every other machine +10% while it is online.' },
+  overdrive: { name: 'Overdrive', text: 'x2 output during meteor showers, solar flares and golden comets.' },
+  ramp: { name: 'Slow Burn', text: 'Starts at x0.6 and grows to x1.5 as the planet heals.' },
+  early: { name: 'Pioneer', text: 'x1.6 on a dead world, fading to x0.8 as it heals.' },
+  pack: { name: 'Pack', text: '+10% for every other machine online.' },
+  jackpot: { name: 'Jackpot', text: '1 shot in 5 pays 5 seconds of its output at once.' },
+  refit: { name: 'Veteran', text: '+30% for every Mark it has earned.' },
+  night: { name: 'Night Shift', text: 'Earns double while you are away.' },
+  steady: { name: 'Workhorse', text: 'Its upgrades cost 15% less.' },
+  gravity: { name: 'Gravity Well', text: 'Events come 30% sooner while it is online.' },
+};
+// Where each machine can stand, which side it was drawn for, its trait and pace. side = the upper corners (aimed at the planet),
+// top = straight above, ground = on the ground line. face 1: drawn for the right side, -1: for the left, 0: either (mirrored on the
+// other side).
+const PLACE = {
+  laser: ['side', 1, 'steady', 1], striker: ['side', 1, 'refit', .8], lance: ['side', 1, 'ramp', 1.2],
+  drone: ['side', 0, 'early', .7], asteroid: ['side', -1, 'refit', 1.3], pod: ['side', 0, 'pack', .6],
+  gatling: ['side', 1, 'overdrive', .35], harpoon: ['side', 1, 'jackpot', 1.5], nanite: ['side', 1, 'pack', .6],
+  solar: ['top', 0, 'support', 1.4], coil: ['top', 0, 'overdrive', .5], ion: ['top', 0, 'support', 1.2],
+  grav: ['top', 0, 'gravity', 1.8], bomber: ['top', 0, 'pack', .9], ribbon: ['top', 0, 'support', 1.6],
+  rocket: ['ground', 0, 'steady', 1.4], volcano: ['ground', 0, 'night', 1.5], driver: ['ground', 1, 'steady', 1.2],
+  bio: ['ground', 0, 'early', 1], forge: ['ground', 0, 'night', 1.8], hydro: ['ground', -1, 'night', 1],
+  core: ['ground', 0, 'gravity', 1.6], antimatter: ['ground', 0, 'jackpot', 2.5], star: ['ground', 0, 'ramp', 2],
+  quake: ['ground', 0, 'refit', 1.6], mortar: ['ground', 1, 'overdrive', 1.3], maser: ['ground', 1, 'ramp', 1],
+  silo: ['ground', 0, 'jackpot', 3], spore: ['ground', 0, 'early', 1.2], bore: ['ground', 0, 'gravity', 2],
+};
+for (const [id, [spot, face, trait, pace]] of Object.entries(PLACE)) Object.assign(CATALOG[id], { spot, face, trait, pace });
+console.assert(Object.keys(CATALOG).length === 30 && Object.values(CATALOG).every(c => c.spot && TRAITS[c.trait]), 'catalog: 30 machines, each placed with a trait');
+// Unlock slots, in unlock order: 0 upper right, 1 top, 2 upper left, then five on the ground (right, left, centre, far right, far left).
+const SLOT_SPOT = ['side', 'top', 'side', 'ground', 'ground', 'ground', 'ground', 'ground'];
+const TIER = [[100, 3], [600, 12], [3500, 48], [2e4, 190], [1.1e5, 750], [6e5, 2900], [3.3e6, 11000], [1.5e7, 40000]].map(([unlock, base]) => ({ unlock, base }));
 // Unlocking costs extra (upgrades keep the TIER price): you live with one machine for a while before the next.
-// Steep early, gentle late, so the sixth still arrives before 100%. Greedy-buyer sim, world 1: the 2nd machine comes at
-// ~2.5 min with the 1st at Lv 26/18/13 (was 1.2 min at 17/11/5); a patient buyer waits ~7.5 min; the world takes ~20-27 min (was ~19).
-const UNLOCK_GATE = [1, 6, 4, 2.5, 1.5, 1];
-const LOADOUTS = [ // one per world, no two alike
-  ['laser', 'solar', 'drone', 'rocket', 'bio', 'core'],                 // CRIMSON: the originals
-  ['striker', 'coil', 'asteroid', 'volcano', 'forge', 'antimatter'],    // ARES: the second generation
-  ['lance', 'ion', 'pod', 'driver', 'hydro', 'star'],                   // KRYPTONITE: the third generation, all at once
-  ['laser', 'coil', 'pod', 'rocket', 'forge', 'star'],                  // GLASS STORM and on: mixes of all three
-  ['striker', 'ion', 'drone', 'driver', 'bio', 'antimatter'],
-  ['lance', 'solar', 'asteroid', 'volcano', 'hydro', 'core'],
-  ['laser', 'ion', 'asteroid', 'driver', 'forge', 'core'],
-  ['lance', 'coil', 'drone', 'volcano', 'hydro', 'antimatter'],
-  ['striker', 'solar', 'pod', 'volcano', 'bio', 'star'],
-  ['laser', 'coil', 'asteroid', 'driver', 'hydro', 'antimatter'],
-  ['lance', 'ion', 'drone', 'rocket', 'forge', 'antimatter'],
-  ['striker', 'ion', 'pod', 'driver', 'hydro', 'star'],
-];
+// Steep early, gentle late, so the last still arrives before 100%.
+const UNLOCK_GATE = [1, 7, 5, 3.5, 2.5, 1.5, .8, .45]; // sim, world 1: greedy ~24 min, all 8 machines; the 2nd after ~8 min with the 1st at Lv 40/30/26; impulsive ~16 min
+// Each world's eight machines: CRIMSON fields the originals; every other world draws its own shuffled lineup (seeded by the world
+// number, so it never changes and no two worlds match).
+const FIRST = ['laser', 'solar', 'drone', 'rocket', 'bio', 'core', 'quake', 'mortar'];
+const seeded = seed => () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; // mulberry32
+function lineup(w) {
+  if (w === 0) return FIRST;
+  const r = seeded(w * 7919 + 17), pool = {};
+  for (const [id, c] of Object.entries(CATALOG)) (pool[c.spot] ??= []).push(id);
+  for (const ids of Object.values(pool)) for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+  return SLOT_SPOT.map(spot => pool[spot].pop());
+}
+console.assert(new Set(Array.from({ length: 24 }, (_, w) => lineup(w).join())).size === 24 && lineup(5).join() === lineup(5).join(), 'lineups: unique per world, stable');
 let SYS;
-const setLoadout = w => { SYS = LOADOUTS[w % LOADOUTS.length].map((id, s) => ({ id, ...CATALOG[id], ...TIER[s] })); };
+const setLoadout = w => { SYS = lineup(w).map((id, s) => ({ id, ...CATALOG[id], ...TIER[s] })); };
 setLoadout(0);
 const MAXL = 50, UPM = [[.25, 1.22], [.8, 1.26], [2.5, 1.3]]; // upgrade k costs unlock * UPM[k][0] * UPM[k][1]^level (x price scale)
 // Pacing (tuned with a greedy-buyer simulation; a real player is about 1.5-2x slower):
@@ -103,21 +168,19 @@ const TAP_RATE = 6, TAP_MAX = .2;
 const MAX_WORLD = 400;
 // Always one clear next step at the top, with a reward: [text, progress, target, reward, go].
 // go: the system a tap on the unfinished goal jumps to (-1 = back to the planet); a function picks it at tap time.
+const unlockGoal = s => [() => `Unlock the ${SYS[s].name}`, () => +S.on[s], 1, TIER[s].unlock / 2, s];
 const GOALS = [
   ['Tap the planet 10 times', () => S.taps, 10, 60, -1], // 10 taps (40) + 60 = exactly the first unlock
-  [() => `Unlock the ${SYS[0].name}`, () => +S.on[0], 1, 50, 0],
-  [() => `Unlock the ${SYS[1].name}`, () => +S.on[1], 1, 500, 1],
+  unlockGoal(0), unlockGoal(1), unlockGoal(2),
   ['Terraform 25%', () => pct(), 25, 3000, -1],
-  [() => `Unlock the ${SYS[2].name}`, () => +S.on[2], 1, 6000, 2],
+  unlockGoal(3), unlockGoal(4),
   ['Terraform 50%', () => pct(), 50, 1e5, -1],
-  [() => `Unlock the ${SYS[3].name}`, () => +S.on[3], 1, 5e4, 3],
+  unlockGoal(5),
   ['Terraform 75%', () => pct(), 75, 3e6, -1],
-  [() => `Unlock the ${SYS[4].name}`, () => +S.on[4], 1, 1e6, 4],
-  [() => `Unlock the ${SYS[5].name}`, () => +S.on[5], 1, 2e7, 5],
+  unlockGoal(6), unlockGoal(7),
   ['Terraform 100%', () => pct(), 100, 0, -1],
 ].map(([text, get, need, reward, go]) => ({ text, get, need, reward, go })); // never asks for upgrades: unlock prices (UNLOCK_GATE) make those natural
-// Saves before goal list 2 count goals in the old 14-goal list (with three upgrade goals): old index -> first unclaimed goal here.
-const GOALS_V = 2, OLD_GOAL = [0, 1, 2, 2, 3, 3, 4, 5, 5, 5, 7, 7, 9, 10, 11];
+const GOALS_V = 3; // saves from an older goal list resume at the first goal not yet met
 // Worlds in warp order (CRIMSON first). Each heals from `dead` tones into its own alien palette; dg/ag = dead/alive atmosphere glow.
 // music: this world's song (engine in game.js, musicStep). bpm; key: semitones from A; mode (MODES); meter: beats per bar (3 or 4);
 // swing (0..0.33); bright: the music filter cutoff in Hz; prog: chord roots as scale degrees, section A then B (4 bars each);

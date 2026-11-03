@@ -47,14 +47,25 @@ const has = id => S.tal.includes(id);
 const boost = () => 2 ** S.world; // every world you finish doubles all output for good (prices double too: priceScale)
 // Talent multipliers: on everything, and on pairs of systems.
 const allMul = () => (has('echo') ? Math.min(1.5, 1 + .05 * S.world) : 1) * (has('roots') ? 1.25 : 1) * (has('bloom') ? 1.3 : 1) * (has('gaia') ? 1.5 : 1) * (has('kinetic') ? 1 + Math.min(1, S.taps / 1e4) : 1);
-const PAIR = { lens: [0, 1], swarm: [2, 3], grow: [4, 5] };
+const PAIR = { lens: [0, 1, 2], swarm: [3, 4, 5], grow: [6, 7] }; // orbit, ground, the last two
 // live = false: without the solar flare (offline pay and one-off rewards must not freeze a 12 s event's x2)
-const sysOut = (s, live = true) => sysRate(s, S.L[s]) * boost() * allMul() * ((SLOT[s].ground ? trait().ground : trait().orbit) || 1) * (live && ev?.id === 'flare' ? 2 : 1) * (S.boon === 'summer' ? 1.5 : 1)
+// Machine traits (data.js TRAITS) that change output; Jackpot, Night Shift, Workhorse and Gravity Well act in fire, away, price, stepEvents.
+const traitMul = (s, live) => {
+  const t = SYS[s].trait, h = healOf(S.earned);
+  let m = 1 + .1 * SYS.reduce((n, sy, j) => n + (j !== s && S.on[j] && sy.trait === 'support'), 0);
+  if (t === 'overdrive') m *= live && ev ? 2 : 1;
+  else if (t === 'ramp') m *= .6 + .9 * h;
+  else if (t === 'early') m *= 1.6 - .8 * h;
+  else if (t === 'pack') m *= 1 + .1 * (S.on.filter(Boolean).length - 1);
+  else if (t === 'refit') m *= 1 + .3 * markOf(s);
+  return m;
+};
+const sysOut = (s, live = true) => sysRate(s, S.L[s]) * boost() * allMul() * traitMul(s, live) * ((SLOT[s].ground ? trait().ground : trait().orbit) || 1) * (live && ev?.id === 'flare' ? 2 : 1) * (S.boon === 'summer' ? 1.5 : 1)
   * Object.entries(PAIR).reduce((m, [id, ss]) => (has(id) && ss.includes(s) ? m * 2 : m), 1);
 const rateOf = (live = true) => SYS.reduce((a, _, s) => a + (S.on[s] ? sysOut(s, live) : 0), 0);
 const pay = (secs, min) => Math.max(min * priceScale(), rateOf(false) * secs); // one-off rewards: secs of base income, at least min (scaled)
 const tapGain = () => tapOf(rateOf()) * (has('spark') ? 3 : 1) * (has('tapecho') ? 1.5 : 1) * (trait().tap || 1) * (S.boon === 'hands' ? 3 : 1); // one tap, before a crit
-const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (has('thrift') ? .9 : 1) * (S.boon === 'bulk' ? .8 : 1) * (trait().price || 1)); // level l -> l+1 of upgrade k
+const price = (s, k, l = S.L[s][k]) => Math.ceil(ucost(s, k, l) * (SYS[s].trait === 'steady' ? .85 : 1) * (has('thrift') ? .9 : 1) * (S.boon === 'bulk' ? .8 : 1) * (trait().price || 1)); // level l -> l+1 of upgrade k
 const unlockCost = s => Math.ceil(SYS[s].unlock * UNLOCK_GATE[s] * priceScale() * (has('cheap') ? .75 : 1));
 const rewardOf = g => g.reward * priceScale() * (has('patron') ? 3 : 1) * (trait().reward || 1);
 const unlocked = s => s === 0 || S.on[s - 1];
@@ -273,7 +284,9 @@ function shade(src, pal, seed) {
 
 // Where shots leave each sprite, relative to its centre (default: the centre).
 const MUZZLE = { laser: [-30, 16], striker: [-29, 16], coil: [0, 19], asteroid: [25, 14], volcano: [6, 10], forge: [8, -16], antimatter: [0, -5],
-  lance: [-30, 17], ion: [0, 15], pod: [10, 2], driver: [11, -12], hydro: [14, -13], star: [0, -1] }; // cannons: the tip, local (-25|-26, 0) rotated and scaled
+  lance: [-30, 17], ion: [0, 15], pod: [10, 2], driver: [11, -12], hydro: [14, -13], star: [0, -1],
+  grav: [0, 13], bomber: [0, 10], ribbon: [0, 16], gatling: [-28, 16], harpoon: [-29, 17], nanite: [-10, 17],
+  quake: [0, 13], mortar: [-14, -11], maser: [-8, -13], silo: [0, -18], spore: [0, -16], bore: [0, 1] }; // cannons: the tip, local (-25|-26, 0) rotated and scaled
 // Each machine's own colours: H hull, S trim, X its special material. A DOOM-ish arsenal: worn gunmetal, rust, olive drab,
 // dried blood and bone; only what burns stays hot.
 const PAL = {
@@ -282,6 +295,10 @@ const PAL = {
   drone: { H: '#4a5632', S: '#8a8670' }, asteroid: { H: '#86682c', S: '#26282c' }, pod: { H: '#4a5430', S: '#86742e', X: '#86bc44' },
   rocket: { H: '#96928a', S: '#782a24' }, volcano: { H: '#7e4624', S: '#26282c', X: '#ff621a' }, driver: { H: '#3a4e66', S: '#96928a' },
   bio: { H: '#8a8678', S: '#3a6a44', X: '#36763a' }, forge: { H: '#683a24', S: '#8a867c', X: '#ff7426' }, hydro: { H: '#2c5862', S: '#8a867c', X: '#56b4d6' },
+  grav: { H: '#3c3a40', S: '#7a6438', X: '#9a6cf0' }, bomber: { H: '#4e4a38', S: '#7a2a22' }, ribbon: { H: '#38464a', S: '#6a6a3a', X: '#5ee894' },
+  gatling: { H: '#5a4e36', S: '#7e2a20' }, harpoon: { H: '#5c3a28', S: '#9a948a' }, nanite: { H: '#4a4e52', S: '#5a6a34', X: '#9ad06a' },
+  quake: { H: '#6a4020', S: '#9a8a3a' }, mortar: { H: '#5a3a24', S: '#4a4838', X: '#ff6a1a' }, maser: { H: '#3e4448', S: '#8a3022', X: '#ff4a6a' },
+  silo: { H: '#585c46', S: '#8a2a20' }, spore: { H: '#5e3030', S: '#3a2626', X: '#6ea83a' }, bore: { H: '#3a3440', S: '#6a5a3a', X: '#ff8a3a' },
   core: { H: '#2c605a', S: '#967a38' }, antimatter: { H: '#3a2c54', S: '#7046a0', X: '#e6d6ff' }, star: { H: '#7a5e2e', S: '#563818', X: '#ffc244' },
 };
 const ART = {
@@ -443,6 +460,105 @@ const ART = {
     for (const [x, y] of [[17, 7], [17, 23], [9, 15], [25, 15]]) p.dot(x, y, 'A'); // rays
     p.arc(17, 15, 13, 4, 0, Math.PI, 'S'); // ring, front half
   }),
+  // graviton anvil: an iron anvil block on a hanger, brass rim, clamps either side, emitter rings glowing violet below
+  grav: paint(48, 36, p => {
+    p.rect(22, 0, 4, 5, 'D'); p.rect(20, 0, 8, 2, 'M'); // hanger
+    p.poly([[6, 5], [42, 5], [38, 10], [34, 10], [34, 18], [14, 18], [14, 10], [10, 10]], 'H'); p.rect(8, 5, 32, 2, 'S'); // anvil, rim
+    p.rect(16, 11, 16, 2, 'D'); for (const x of [17, 22, 27]) p.rect(x, 14, 3, 2, 'A'); // seam and lights
+    p.rect(2, 9, 6, 9, 'M'); p.rect(40, 9, 6, 9, 'M'); p.rect(4, 11, 2, 5, 'K'); p.rect(42, 11, 2, 5, 'K'); p.rect(8, 12, 6, 3, 'D'); p.rect(34, 12, 6, 3, 'D'); // clamps
+    p.rect(12, 18, 24, 4, 'M'); p.rect(23, 22, 2, 3, 'D'); // base plate, stem
+    p.oval(24, 26, 12, 3, 'D'); p.oval(24, 26, 9, 2, 'X'); p.oval(24, 31, 6, 2, 'X'); p.dot(24, 31, 'W'); // emitter rings
+  }),
+  // cluster bomber: a swept olive wing with a red band, glass canopy, two engines and a bomb bay full of bombs
+  bomber: paint(56, 28, p => {
+    p.poly([[0, 14], [20, 8], [36, 8], [56, 14], [36, 16], [20, 16]], 'H'); p.line(2, 14, 18, 10, 'D'); p.line(54, 14, 38, 10, 'D'); // wing
+    p.poly([[20, 6], [36, 6], [38, 18], [18, 18]], 'H'); p.rect(18, 9, 20, 2, 'S'); // fuselage and band
+    p.oval(28, 6, 5, 3, 'G', true); p.rect(23, 6, 11, 1, 'M'); // canopy
+    for (const x of [8, 48]) { p.rect(x - 3, 15, 6, 4, 'M'); p.rect(x - 2, 19, 4, 1, 'A'); } // engines
+    p.rect(22, 18, 12, 4, 'K'); for (const x of [23, 27, 31]) { p.rect(x, 20, 2, 4, 'D'); p.dot(x, 24, 'M'); } // bomb bay
+  }),
+  // magnetar halo: a segmented ring station on spokes around a hub with a green core, a field emitter below
+  ribbon: paint(44, 38, p => {
+    p.arc(22, 16, 20, 14, 0, 2 * Math.PI, 'M'); p.arc(22, 16, 19, 13, 0, 2 * Math.PI, 'M'); // ring
+    for (const a of [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2]) p.line(22 + Math.cos(a) * 6, 16 + Math.sin(a) * 5, 22 + Math.cos(a) * 18, 16 + Math.sin(a) * 12, 'D'); // spokes
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4 + Math.PI / 8; p.rect(22 + Math.cos(a) * 19.5 - 1, 16 + Math.sin(a) * 13.5 - 1, 3, 3, 'S'); } // ring segments
+    p.circ(22, 16, 6, 'H'); p.circ(22, 16, 3, 'X'); p.dot(21, 15, 'W'); // hub and core
+    p.rect(20, 30, 4, 4, 'M'); p.rect(19, 34, 6, 2, 'X'); p.dot(22, 36, 'A'); // emitter
+  }),
+  // ripsaw gatling: a motor and receiver with an ammo box, three long barrels in clamps aimed down-left
+  gatling: paint(64, 42, p => {
+    const r = p.rot(34, 21, -.5, 1.3);
+    r.rect(15, -5, 5, 10, 'D'); r.rect(20, -3, 2, 6, 'A'); // motor
+    r.poly([[4, -8], [15, -7], [15, 7], [4, 8]], 'H'); r.rect(6, 4, 8, 2, 'S'); // receiver, stripe
+    r.rect(6, -12, 8, 5, 'M'); r.rect(7, -11, 6, 3, 'D'); r.rect(9, -10, 2, 1, 'A'); // ammo box
+    r.rect(-4, -5, 8, 10, 'M'); // rear clamp
+    for (const y of [-4, -1, 2]) { r.rect(-24, y, 20, 2, 'K'); r.rect(-24, y, 20, 1, 'M'); } // barrels
+    r.rect(-14, -5, 2, 9, 'D'); r.rect(-25, -5, 3, 9, 'M'); // clamps
+  }),
+  // comet harpoon: a chain spool, a launcher body, a short tube and a barbed bone-white head aimed down-left
+  harpoon: paint(64, 42, p => {
+    const r = p.rot(34, 21, -.5, 1.3);
+    r.poly([[8, -9], [18, -9], [20, -4], [20, 4], [18, 9], [8, 9]], 'M'); r.rect(10, -7, 7, 14, 'D'); for (const y of [-6, -3, 0, 3]) r.rect(11, y, 5, 1, 'S'); // spool and chain
+    r.poly([[-2, -5], [8, -6], [8, 6], [-2, 5]], 'H'); r.rect(0, 2, 7, 2, 'A'); // launcher body
+    r.rect(-16, -2, 14, 4, 'M'); r.rect(-16, -1, 14, 1, 'D'); // tube
+    r.poly([[-17, -4], [-27, 0], [-17, 4], [-20, 0]], 'S'); r.dot(-26, 0, 'W'); // barbed head
+  }),
+  // nanite censer: an urn swinging on a chain, glowing vents, a nozzle spraying down-left
+  nanite: paint(44, 40, p => {
+    p.line(30, 0, 27, 8, 'M'); p.line(31, 0, 28, 8, 'D'); p.rect(22, 8, 12, 3, 'M'); // chain and cap
+    p.oval(28, 18, 10, 8, 'H'); p.rect(18, 17, 20, 2, 'S'); for (const x of [22, 27, 32]) p.rect(x, 13, 2, 3, 'X'); // urn, band, vents
+    p.rect(36, 16, 4, 4, 'M'); p.dot(38, 15, 'A'); // gauge
+    p.rect(25, 24, 6, 3, 'M'); p.poly([[25, 27], [31, 27], [20, 36], [14, 34]], 'D'); p.poly([[14, 33], [20, 36], [17, 39], [11, 36]], 'M'); // neck and nozzle
+    p.dot(12, 37, 'X'); p.dot(10, 36, 'A'); // spray
+  }),
+  // quake hammer: two steel columns and a crossbeam, a piston driving a striped hammer head onto an anvil plate
+  quake: paint(34, 38, p => {
+    p.rect(2, 4, 4, 28, 'M'); p.rect(28, 4, 4, 28, 'M'); for (const y of [9, 17, 25]) { p.rect(3, y, 2, 1, 'D'); p.rect(29, y, 2, 1, 'D'); } // columns
+    p.rect(0, 1, 34, 4, 'D'); p.rect(0, 1, 34, 1, 'M'); p.rect(16, 3, 2, 1, 'A'); // crossbeam, warning light
+    p.rect(15, 5, 4, 9, 'M'); // piston rod
+    p.rect(8, 14, 18, 10, 'H'); for (const x of [10, 15, 20]) p.poly([[x, 14], [x + 3, 14], [x + 1, 24], [x - 2, 24]], 'S'); p.rect(8, 22, 18, 2, 'D'); // hammer head
+    p.rect(0, 32, 34, 6, 'K'); p.rect(10, 30, 14, 2, 'D'); for (const x of [2, 28]) p.rect(x, 34, 4, 2, 'A'); // anvil plate and base
+  }),
+  // napalm mortar: a stubby tube angled up-left on a mount, glowing fuel tanks, sandbags on a concrete base
+  mortar: paint(32, 30, p => {
+    p.rect(0, 24, 32, 6, 'K'); p.rect(1, 22, 30, 3, 'S'); for (const x of [3, 11, 19, 27]) p.rect(x, 22, 3, 2, 'D'); // base, sandbags
+    p.rect(20, 10, 9, 12, 'H'); for (const y of [12, 17]) p.rect(20, y, 9, 2, 'X'); p.rect(21, 8, 2, 2, 'M'); p.rect(26, 8, 2, 2, 'M'); // fuel tanks
+    p.rect(10, 18, 6, 4, 'D'); p.dot(16, 19, 'A'); // mount
+    const r = p.rot(11, 19, -2.1, 1);
+    r.rect(-2, -4, 6, 8, 'D'); r.rect(2, -3, 14, 6, 'M'); r.rect(2, -3, 14, 1, 'S'); r.rect(14, -4, 3, 8, 'D'); // breech, tube, muzzle ring
+  }),
+  // maser dish: a big dish on a yoke facing up-left, its feed horn glowing red, on a striped base
+  maser: paint(34, 32, p => {
+    p.rect(2, 26, 30, 6, 'H'); p.rect(2, 26, 30, 1, 'S'); for (const x of [6, 14, 22]) p.rect(x, 28, 4, 2, 'D'); // base
+    p.rect(14, 18, 8, 8, 'M'); p.rect(12, 16, 12, 3, 'D'); // neck and yoke
+    const r = p.rot(18, 13, -2.3, 1);
+    const ell = (cx, rx, ry) => Array.from({ length: 16 }, (_, i) => [cx + Math.cos(i / 16 * 2 * Math.PI) * rx, Math.sin(i / 16 * 2 * Math.PI) * ry]);
+    r.poly(ell(1, 4, 13), 'M'); r.poly(ell(2, 2.5, 10), 'D'); // the dish seen edge-on: rim and bowl
+    r.seg(3, -9, 12, 0, 'S'); r.seg(3, 9, 12, 0, 'S'); r.rect(11, -1, 3, 3, 'X'); r.dot(14, 0, 'W'); // feed struts and horn
+  }),
+  // terra warhead: a concrete silo with its blast doors open and an olive warhead with a red nose rising out
+  silo: paint(30, 36, p => {
+    p.rect(0, 28, 30, 8, 'R'); p.rect(0, 28, 30, 1, 'M'); for (let x = 1; x < 29; x += 5) p.rect(x, 31, 3, 2, 'K'); // pad
+    p.poly([[3, 28], [6, 20], [24, 20], [27, 28]], 'M'); // collar
+    p.poly([[1, 18], [7, 14], [8, 20], [3, 21]], 'D'); p.poly([[29, 18], [23, 14], [22, 20], [27, 21]], 'D'); // blast doors
+    p.rect(10, 6, 10, 16, 'H'); p.poly([[10, 6], [15, 0], [20, 6]], 'S'); p.rect(10, 12, 10, 2, 'K'); p.rect(12, 8, 2, 2, 'A'); // warhead
+    p.rect(7, 18, 3, 4, 'H'); p.rect(20, 18, 3, 4, 'H'); // fins
+  }),
+  // spore tower: a fleshy grown stalk with ribs, roots and glowing spore sacs
+  spore: paint(30, 38, p => {
+    p.poly([[4, 38], [8, 32], [22, 32], [26, 38]], 'K'); p.line(3, 37, 9, 33, 'S'); p.line(27, 37, 21, 33, 'S'); // roots
+    p.poly([[10, 32], [12, 18], [11, 8], [15, 2], [19, 8], [18, 18], [20, 32]], 'H'); for (const y of [12, 18, 24, 29]) p.line(12, y, 18, y - 1, 'S'); // stalk, ribs
+    for (const [x, y, rr] of [[9, 14, 2], [21, 10, 2], [8, 24, 3], [22, 22, 2], [15, 4, 2]]) { p.circ(x, y, rr, 'D'); p.circ(x, y, rr - 1, 'X'); } // sacs, dark rinds round a sick glow
+    p.dot(15, 1, 'A');
+  }),
+  // singularity bore: a tripod rig holding a tiny black hole in its glowing accretion disk
+  bore: paint(34, 34, p => {
+    p.rect(0, 30, 34, 4, 'D'); p.rect(0, 30, 34, 1, 'M');
+    p.line(3, 30, 11, 6, 'M'); p.line(4, 30, 12, 6, 'M'); p.line(31, 30, 23, 6, 'M'); p.line(30, 30, 22, 6, 'M'); // legs
+    p.rect(9, 3, 16, 4, 'H'); p.rect(9, 3, 16, 1, 'S'); p.rect(16, 7, 2, 4, 'M'); // head frame
+    p.oval(17, 18, 12, 2, 'X'); p.circ(17, 17, 6, 'K'); p.arc(17, 17, 7, 7, Math.PI * 1.1, Math.PI * 1.9, 'W'); p.rect(5, 18, 25, 1, 'X'); p.dot(17, 18, 'W'); // disk, hole, photon rim, disk front
+    for (const x of [11, 23]) p.rect(x, 26, 2, 4, 'A'); // stabilizers
+  }),
 };
 // Marks: a system's look grows with its best upgrade (Lv 10 / 25 / 50): the amber accents turn cyan, violet, then white (Mark IV also glows).
 const MARK_AT = [10, 25, 50], MARK = ['I', 'II', 'III', 'IV'];
@@ -464,7 +580,12 @@ const LOOKS = Object.fromEntries(Object.entries(ART).map(([id, a], i) => {
   const lit = shade(a, PAL[id], i);
   return [id, { next: shadow(a, false), sil: shadow(a, true), lit, marks: [lit, ...MARKS.map(m => recolour(lit, m))] }];
 }));
-const look = s => LOOKS[SYS[s].id]; // the sprites of whatever system holds slot s
+const mirror = c => { const m = mk(c.width, c.height), g = m.getContext('2d'); g.translate(c.width, 0); g.scale(-1, 1); g.drawImage(c, 0, 0); return m; };
+const flipped = s => { const f = SYS[s].face || 0, side = Math.sign(SLOT[s].x || 0); return !!f && !!side && f !== side; }; // drawn for the other side
+const look = s => { // the sprites of whatever system holds slot s, mirrored when it stands on the side it was not drawn for
+  const lk = LOOKS[SYS[s].id];
+  return flipped(s) ? (lk.flip ??= { next: mirror(lk.next), sil: mirror(lk.sil), lit: mirror(lk.lit), marks: lk.marks.map(mirror) }) : lk;
+};
 
 // Small sprites drawn as-is: w = line, n = fill, p = accent.
 function tiny(rows) {
@@ -635,14 +756,14 @@ const grainPat = out.createPattern((() => {
 // 0 = right, -90 = straight up). Ground systems stand on the ground line instead, at x planet radii from centre:
 // only working buildings on the ground, no filler.
 const ORBIT = 1.42, WIDE = 1.7, GX = 1.2; // orbit radius of the top system (it sets the planet's size) and of the two side ones (well clear, where there is room)
-const SLOT = [
-  { a: -30 },                 // laser: upper right, aimed down at the planet
-  { a: -90 },                 // solar mirror: straight above
-  { a: -150 },                // drone rig: upper left
-  { x: GX, ground: true },    // comet launcher: pad on the right
-  { x: -GX, ground: true },   // bio seeder: greenhouse on the left
-  { x: 0, ground: true },     // terra core: reactor in front of the planet
+const SLOT = [ // in unlock order. Ground: lx on wide screens, px on tall ones (planet radii from centre); far ones go out along
+  { a: -30 },                                   // the ground where there is room, else between the planet's centre and edge
+  { a: -90 },
+  { a: -150 },
+  { lx: GX, px: 1, ground: true }, { lx: -GX, px: -1, ground: true }, { lx: 0, px: 0, ground: true },
+  { lx: 2, px: .52, ground: true, far: true }, { lx: -2, px: -.52, ground: true, far: true },
 ];
+for (const sl of SLOT) if (sl.ground) sl.x = sl.lx;
 for (const sl of SLOT) if (!sl.ground) { const r = sl.a * Math.PI / 180, o = sl.a === -90 ? ORBIT : WIDE; sl.x = Math.cos(r) * o; sl.y = Math.sin(r) * o; }
 const HIT = 20; // touch radius in scene pixels (40+ CSS px), a bit larger than the sprites
 let K, PX, W, H, R0, R, CX, CY, GY, TOP, SIDE, FY = 1, layoutH = 0, city = [], cityCv, cityN = -1, ridge = [];
@@ -681,7 +802,8 @@ function layout() {
   const portrait = H > W * 1.2, gx = portrait ? 1 : GX, fit = (GY - TOP - 28) / (ORBIT + .45);
   R0 = Math.max(10, Math.min(W * .42, (W / 2 - 19) / gx, fit));
   const lift = portrait ? Math.min(.35 * R0, (fit - R0) * (ORBIT + .45) * .5) : 0;
-  for (const sl of SLOT) if (sl.ground) sl.x = Math.sign(sl.x) * gx;
+  const room = (W / 2 - 22) / R0; // how far out a ground machine still fits
+  for (const sl of SLOT) if (sl.ground) sl.x = portrait ? sl.px : !sl.far ? sl.lx : Math.sign(sl.lx) * (room >= 1.7 ? Math.min(2, room) : .55);
   CX = Math.round(W / 2); CY = Math.round(GY - R0 * .45 - lift);
   FY = Math.max(1, Math.min(1.15, (CY - TOP - 30) / (ORBIT * R0))); // tall screens: a slight upward stretch, still hugging the planet
   // low background colony: a mix of building types, leaving open ground around the ground systems.
@@ -711,7 +833,7 @@ function sysPos(s, t) {
   if (!sl.ground) y = Math.max(TOP + h / 2 + 10, y); // room for the label above
   return [Math.round(x), Math.round(y)];
 }
-const muzzle = s => { const [x, y] = sysPos(s, last), [dx, dy] = MUZZLE[SYS[s].id] || [0, 0]; return [x + Math.round(dx * ART_K), y + Math.round(dy * ART_K)]; };
+const muzzle = s => { const [x, y] = sysPos(s, last), [dx, dy] = MUZZLE[SYS[s].id] || [0, 0]; return [x + Math.round(dx * ART_K) * (flipped(s) ? -1 : 1), y + Math.round(dy * ART_K)]; };
 
 // Dot-grid stars like a printed star chart.
 const stars = []; let starsIn = []; // starsIn: the ones on this screen, refreshed by layout()
@@ -771,10 +893,53 @@ function fire(s, real) {
   const tx = CX + Math.cos(a) * d, ty = CY + Math.sin(a) * d, [sx, sy] = muzzle(s), shot = SYS[s].shot;
   SYS[s].fx = last; SYS[s].fang = Math.atan2(ty - sy, tx - sx); // recoil and muzzle flash (drawSystem, sysPos)
   play(shot, real ? 1 : .35);
+  if (SYS[s].trait === 'jackpot' && Math.random() < .2) { // Jackpot: a lump of 5 s of its output, in gold
+    const g = sysOut(s, false) * 5; earn(g);
+    floats.push({ x: tx, y: ty - 16, text: '+' + fmt(g), life: 1.8, col: C.sun }); burst(tx, ty, [C.sun, C.line], 16, 50); play('crit', .5);
+  }
+  const V = { gravity: '#c9a8ff', ribbon: '#6ef0a0', maser: '#ff4a6a', vortex: '#7a4ab0' };
+  if (shot === 'gravity') { // a faint column, then three rings collapsing onto the spot
+    beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: V.gravity, a: .4, fade: 2.5 });
+    for (let k = 0; k < 3; k++) pulses.push({ x: tx, y: ty, r: 10 + k * 7, v: -16 - k * 7, life: 1, col: V.gravity });
+    return land(s, tx, ty, real);
+  }
+  if (shot === 'ribbon') { // a twin aurora ribbon that ripples down to the planet
+    beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: V.ribbon, wave: 4, fade: 1.8 });
+    beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: '#c8ffe0', wave: -3, fade: 1.8, a: .6 });
+    return land(s, tx, ty, real);
+  }
+  if (shot === 'maser') { beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: V.maser, w: 2, dash: true, end: true, fade: 3 }); return land(s, tx, ty, real); } // pulsed microwaves
+  if (shot === 'vortex') { // a dark thread, then debris spiralling into the spot
+    beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: V.vortex, w: 2, fade: 3 });
+    for (let i = 0; i < 16; i++) { const a = i / 16 * 2 * Math.PI; parts.push({ x: tx + Math.cos(a) * 14, y: ty + Math.sin(a) * 9, vx: -Math.sin(a) * 34 - Math.cos(a) * 22, vy: Math.cos(a) * 22 - Math.sin(a) * 15, life: .9, color: i % 2 ? C.lava : '#b48cff' }); }
+    pulses.push({ x: tx, y: ty, r: 12, v: -20, life: 1, col: '#b48cff' });
+    return land(s, tx, ty, real);
+  }
+  if (shot === 'quake') { // the hammer slams: dust at its feet, a shockwave on the planet
+    burst(sx, sy, [C.dim, C.soft], 10, 30); shake = Math.max(shake, real ? .6 : .25);
+    pulses.push({ x: tx, y: ty, r: 2, v: 70, life: 1, col: C.soft }); pulses.push({ x: tx, y: ty, r: 2, v: 40, life: 1, col: C.line });
+    return land(s, tx, ty, real);
+  }
+  if (shot === 'bombs') { // a stick of four bombs falling one after another
+    for (let k = 0; k < 4; k++) shots.push({ s, sx: sx + (k - 1.5) * 3, sy, tx: tx + (k - 1.5) * 9, ty: ty + (Math.random() - .5) * 6, t: -k * .12, dur: .55, real: real && !k, quiet: k > 0 });
+    return;
+  }
+  if (shot === 'gatling') { // a burst of six tracers
+    for (let k = 0; k < 6; k++) shots.push({ s, sx, sy, tx: tx + (Math.random() - .5) * 10, ty: ty + (Math.random() - .5) * 8, t: -k * .06, dur: .16, real: real && !k, quiet: k > 0 });
+    return;
+  }
+  if (shot === 'spray') { // a cone of nanites
+    for (let k = 0; k < 8; k++) shots.push({ s, sx, sy, tx: tx + (Math.random() - .5) * 18, ty: ty + (Math.random() - .5) * 12, t: -k * .03, dur: .45 + Math.random() * .2, real: real && !k, quiet: k > 0 });
+    return;
+  }
+  if (shot === 'spores') { // glowing spores that drift and wobble up to the planet
+    for (let k = 0; k < 5; k++) shots.push({ s, sx: sx + (k - 2) * 2, sy, tx: tx + (k - 2) * 8, ty: ty + (Math.random() - .5) * 10, t: -k * .1, dur: 1.6 + k * .15, real: real && !k, quiet: k > 0, seed: k * 1.7 });
+    return;
+  }
   if (shot === 'light') { // sunlight from above lands on both mirror panels, then one reflected beam heats the planet
-    for (const px of [-21, 20]) {
-      beams.push({ x1: sx + px - 26, y1: 0, x2: sx + px, y2: sy - 9, life: 1, col: C.sun, w: 2, a: .55, fade: 2 });
-      burst(sx + px, sy - 9, [C.sun, C.line], 3, 12); // glint on the panel
+    for (const px of [-21, 20].map(v => Math.round(v * ART_K))) {
+      beams.push({ x1: sx + px - 26, y1: 0, x2: sx + px, y2: sy - Math.round(9 * ART_K), life: 1, col: C.sun, w: 2, a: .55, fade: 2 });
+      burst(sx + px, sy - Math.round(9 * ART_K), [C.sun, C.line], 3, 12); // glint on the panel
     }
     beams.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 1, col: C.sun, w: 2, end: true, fade: 2.5, delay: .15 }); // reflection follows a beat later
     const w0 = S.world;
@@ -804,16 +969,19 @@ function fire(s, real) {
     for (let k = 0; k < 3; k++) shots.push({ s, sx, sy, tx: tx + (k - 1) * 7, ty: ty + (Math.random() - .5) * 8, t: 0, dur: .8 + k * .12, real: real && !k, quiet: k > 0 });
     return;
   }
-  const dur = { rod: .28, lava: 1.1, gas: 1.7, capsule: .9, water: 1 }[shot] ?? .7 + Math.random() * .3; // rods are fast, lava bombs and capsules lob, gas drifts
+  const dur = { rod: .28, lava: 1.1, gas: 1.7, capsule: .9, water: 1, harpoon: .32, mortar: 1.25, nuke: 1.5 }[shot] ?? .7 + Math.random() * .3; // rods are fast, lava bombs and capsules lob, gas drifts
   shots.push({ s, sx, sy, tx, ty, t: 0, dur, real });
 }
 // Seconds between automatic shots: more crew fires faster.
-const cadence = s => Math.max(.6, 4 / Math.sqrt(1 + S.L[s][0]));
+const cadence = s => Math.max(.6, 4 / Math.sqrt(1 + S.L[s][0])) * (SYS[s].pace || 1); // pace: fast and light, or slow and heavy
 function land(s, x, y, real, quiet) { // quiet: extra chunks of a spray, no pop-up
-  const shot = SYS[s].shot, big = ['rocket', 'pulse', 'rod', 'lava', 'annihilate', 'capsule', 'flare', 'ion'].includes(shot);
-  const tint = { lava: [C.lava, C.sun, C.line], arc: [C.zap, C.line], ion: [C.zap, C.line], plasma: [C.plasma, C.line], water: [C.water, C.line], flare: [C.sun, C.line] }[shot];
+  const shot = SYS[s].shot, big = ['rocket', 'pulse', 'rod', 'lava', 'annihilate', 'capsule', 'flare', 'ion', 'bombs', 'quake', 'mortar', 'nuke', 'harpoon'].includes(shot);
+  const tint = { lava: [C.lava, C.sun, C.line], arc: [C.zap, C.line], ion: [C.zap, C.line], plasma: [C.plasma, C.line], water: [C.water, C.line], flare: [C.sun, C.line],
+    gravity: ['#c9a8ff', C.line], ribbon: ['#6ef0a0', C.line], maser: ['#ff4a6a', C.sun], mortar: [C.lava, C.sun, C.line], nuke: [C.sun, C.lava, C.line],
+    spores: ['#8ad84a', '#d8ffb0'], vortex: ['#b48cff', C.lava], spray: ['#9ad06a', C.soft], quake: [C.soft, C.dim, C.line], gatling: [C.sun, C.line] }[shot];
   burst(x, y, tint || [C.line, C.acc, C.soft], real ? 24 : quiet ? 3 : 7, big ? 60 : 35);
   if (big) { shake = Math.max(shake, real ? .7 : .2); play('boom', real ? 1 : .3); }
+  if (shot === 'nuke' && !quiet) { pulses.push({ x, y, r: 3, v: 80, life: 1, col: C.sun }); flash = Math.max(flash, real ? .3 : .1); shake = Math.max(shake, real ? 1 : .4); } // a warhead: a flash and a wide ring
   if (quiet) return;
   if (real) { const [u, v] = texPos(x, y); items.push({ u, v, born: last }); if (items.length > 300) items.splice(0, items.length - 150); }
   // damage pop-up: what this system earns per shot, so the numbers match the real income
@@ -1021,10 +1189,11 @@ function draw(t, heal) {
   if (!photo) SYS.forEach((_, s) => drawMarks(s, t)); // a photo is the scene only: no labels, prices or brackets
 
   for (const s of shots) {
+    if (s.t < 0) continue; // queued in a burst
     const k = s.t / s.dur, shot = SYS[s.s].shot, lift = Math.sin(k * Math.PI), len = Math.hypot(s.tx - s.sx, s.ty - s.sy) || 1;
     const bend = s.curve ? lift * s.curve / len : 0; // missiles curve off the straight line and back
     const x = s.sx + (s.tx - s.sx) * k - (s.ty - s.sy) * bend;
-    const y = s.sy + (s.ty - s.sy) * k + (s.tx - s.sx) * bend - lift * ({ lava: 28, capsule: 40, water: 22 }[shot] || 0); // lobbed shots arc up first
+    const y = s.sy + (s.ty - s.sy) * k + (s.tx - s.sx) * bend - lift * ({ lava: 28, capsule: 40, water: 22, mortar: 70, nuke: 26 }[shot] || 0); // lobbed shots arc up first
     if (shot === 'rocket') { blit(T.missile, x, y); parts.push({ x, y, vx: (Math.random() - .5) * 6, vy: (Math.random() - .5) * 6, life: .5, color: Math.random() < .5 ? C.acc : C.line }); }
     else if (shot === 'drone') blit(T.drone, x, y);
     else if (shot === 'rod') { const dx = (s.tx - s.sx) * .08, dy = (s.ty - s.sy) * .08; P.line(x - dx, y - dy, x, y, C.line); P.line(x - dx + 1, y - dy, x + 1, y, C.soft); } // streak
@@ -1037,6 +1206,17 @@ function draw(t, heal) {
       const r = 2 + k * 5;
       ctx.globalAlpha = .7 - k * .3; P.ring(x, y, r, r * .8, 0, 2 * Math.PI, C.gas); P.ring(x + r * .6, y - 1, r * .6, r * .5, 0, 2 * Math.PI, C.gas); ctx.globalAlpha = 1;
     }
+    else if (shot === 'bombs') { P.fill(x - 1, y - 2, 2, 4, '#2a2c30'); P.dot(x, y + 1, '#c8402a'); }
+    else if (shot === 'gatling') { const dx = (s.tx - s.sx) * .06, dy = (s.ty - s.sy) * .06; P.line(x - dx, y - dy, x, y, C.sun); }
+    else if (shot === 'harpoon') { // the barbed head trailing its chain back to the gun
+      const n = Math.max(1, Math.round(Math.hypot(x - s.sx, y - s.sy) / 3));
+      for (let i = 0; i < n; i++) P.dot(s.sx + (x - s.sx) * i / n, s.sy + (y - s.sy) * i / n, i % 2 ? C.dim : C.soft);
+      P.fill(x - 1, y - 1, 3, 3, C.line);
+    }
+    else if (shot === 'spray') { P.dot(x, y, '#9ad06a'); if (Math.random() < .3) parts.push({ x, y, vx: 0, vy: 0, life: .3, color: C.soft }); }
+    else if (shot === 'mortar') { P.fill(x - 2, y - 2, 4, 4, C.lava); P.dot(x, y - 1, C.sun); parts.push({ x, y, vx: (Math.random() - .5) * 10, vy: 8, life: .5, color: Math.random() < .5 ? C.lava : C.sun }); }
+    else if (shot === 'nuke') { P.fill(x - 1, y - 2, 3, 5, '#8a8a7a'); P.dot(x, y - 2, '#c8402a'); parts.push({ x, y: y + 2, vx: (Math.random() - .5) * 4, vy: 4, life: .8, color: Math.random() < .5 ? C.dim : C.soft }); }
+    else if (shot === 'spores') { const wx = x + Math.sin(s.t * 6 + s.seed) * 3; P.dot(wx, y, '#8ad84a'); P.dot(wx + 1, y, '#d8ffb0'); }
     else { P.fill(x - 1, y - 1, 2, 2, C.line); parts.push({ x, y, vx: 0, vy: 0, life: .4, color: C.soft }); }
   }
   for (const b of beams) { // w = width in pixels, a = opacity, end = flash at the impact point
@@ -1049,6 +1229,16 @@ function draw(t, heal) {
         const f = i / 7, j = i < 7 ? (Math.random() - .5) * 12 : 0, qx = b.x1 + (b.x2 - b.x1) * f + nx / len * j, qy = b.y1 + (b.y2 - b.y1) * f + ny / len * j;
         P.line(px, py, qx, qy, b.col); px = qx; py = qy;
       }
+    } else if (b.wave) { // a ribbon rippling along the line
+      const nx = b.y1 - b.y2, ny = b.x2 - b.x1, len = Math.hypot(nx, ny) || 1;
+      let px = b.x1, py = b.y1;
+      for (let i = 1; i <= 16; i++) {
+        const f = i / 16, j = Math.sin(f * 9 + last * 10) * b.wave * Math.sin(f * Math.PI), qx = b.x1 + (b.x2 - b.x1) * f + nx / len * j, qy = b.y1 + (b.y2 - b.y1) * f + ny / len * j;
+        P.line(px, py, qx, qy, b.col); px = qx; py = qy;
+      }
+    } else if (b.dash) { // pulses of energy marching down the line
+      const n = Math.max(2, Math.round(Math.hypot(b.x2 - b.x1, b.y2 - b.y1) / 4)), off = Math.floor(last * 20) % 2;
+      for (let i = off; i < n; i += 2) for (let o = 0; o < (b.w || 1); o++) P.line(b.x1 + (b.x2 - b.x1) * i / n + o, b.y1 + (b.y2 - b.y1) * i / n, b.x1 + (b.x2 - b.x1) * (i + 1) / n + o, b.y1 + (b.y2 - b.y1) * (i + 1) / n, b.col);
     } else for (let o = 0; o < (b.w || 1); o++) P.line(b.x1 + o, b.y1, b.x2 + o, b.y2, b.col);
     if (b.end) P.fill(b.x2 - 1, b.y2 - 1, 3, 3, C.line);
   }
@@ -1171,6 +1361,18 @@ const SFX = {
   water: k => hiss({ dur: .5, vol: .06 * k, freq: 1200, f2: 400, kind: 'bandpass', q: 1.5 }),
   flare: k => { tone({ f: 110, f2: 55, dur: .7, vol: .12 * k, type: 'sine' }); tone({ f: 880, f2: 1760, dur: .5, vol: .03 * k, type: 'triangle', attack: .1 }); },
   annihilate: k => { tone({ f: 70, f2: 28, dur: .9, vol: .2 * k, type: 'sine' }); hiss({ dur: .5, vol: .08 * k, freq: 3000, f2: 150 }); },
+  gravity: k => { tone({ f: 60, f2: 28, dur: .7, vol: .14 * k, type: 'sine' }); tone({ f: 420, f2: 110, dur: .5, vol: .03 * k, type: 'triangle' }); },
+  bombs: k => arp([760, 600, 470, 370], .11, { dur: .1, vol: .03 * k, type: 'square' }), // falling whistles
+  ribbon: k => tone({ f: 330, f2: 680, dur: .6, vol: .035 * k, type: 'sine', attack: .12 }),
+  gatling: k => arp([210, 230, 210, 230, 210, 230], .055, { dur: .03, vol: .05 * k, type: 'square' }),
+  harpoon: k => { tone({ f: 900, f2: 180, dur: .2, vol: .05 * k, type: 'sawtooth' }); hiss({ dur: .3, vol: .04 * k, freq: 2500, kind: 'highpass' }); },
+  spray: k => hiss({ dur: .5, vol: .05 * k, freq: 3000, f2: 1400, kind: 'bandpass', q: 1 }),
+  quake: k => { tone({ f: 48, f2: 28, dur: .5, vol: .18 * k, type: 'sine' }); hiss({ dur: .3, vol: .08 * k, freq: 300, f2: 80 }); },
+  mortar: k => tone({ f: 120, f2: 55, dur: .2, vol: .1 * k, type: 'square' }),
+  maser: k => tone({ f: 2000, f2: 1700, dur: .35, vol: .025 * k, type: 'square' }),
+  nuke: k => hiss({ dur: 1.3, vol: .08 * k, freq: 200, f2: 1300, kind: 'bandpass', q: 2 }),
+  spores: k => arp([300, 360, 420], .1, { dur: .2, vol: .025 * k, type: 'sine' }),
+  vortex: k => tone({ f: 800, f2: 40, dur: .8, vol: .06 * k, type: 'sawtooth' }),
 };
 // Haptics: a short buzz on phones that support it, tied to the sound-effects toggle (no-op elsewhere).
 const buzz = ms => { if (pref.sfx) try { navigator.vibrate?.(ms); } catch { /* not allowed here (iframe, desktop) */ } };
@@ -1234,7 +1436,7 @@ function musicStep(s, t) {
 // ---------- achievements: lifetime trophies, listed in the settings sheet ----------
 const ACH = [
   ['light', 'First Light', 'Unlock your first system.', () => S.on.some(Boolean)],
-  ['house', 'Full House', 'Six systems online on one world.', () => S.on.every(Boolean)],
+  ['house', 'Full House', 'Every system online on one world.', () => S.on.every(Boolean)],
   ['mk2', 'Refit', 'Raise any upgrade to Lv 10 (Mark II).', () => S.L.flat().some(l => l >= MARK_AT[0])],
   ['mk4', 'Flagship', 'Max out an upgrade (Lv 50, Mark IV).', () => S.L.flat().some(l => l >= MAXL)],
   ['tap100', 'Warm Hands', 'Tap the planet 100 times.', () => S.taps >= 100],
@@ -1429,6 +1631,7 @@ function updateUI() {
   $('pname').textContent = sy.name;
   set($('pinfo'), S.on[s] ? `${ICON}${fmt(sysOut(s))}/s` : unlocked(s) ? `${ICON}${fmt(unlockCost(s))}` : 'locked');
   $('pfact').textContent = S.on[s] ? sy.fact : '';
+  set($('ptrait'), `<b>${TRAITS[sy.trait].name}</b> ${TRAITS[sy.trait].text}`);
   rows.forEach(({ r, text: el, buy }, k) => {
     if (!S.on[s]) { // locked: one unlock row
       r.hidden = k > 0;
@@ -1490,9 +1693,9 @@ $('prev').addEventListener('click', () => openPanel((sel + SYS.length - 1) % SYS
 $('next').addEventListener('click', () => openPanel((sel + 1) % SYS.length));
 addEventListener('keydown', e => {
   if (e.key === 'Escape') { if (cine) endCine(); else if (!$('talents').hidden) closeTalents(); else if (!$('settings').hidden) closeSettings(); else closePanel(); }
-  // 1-6 open a system's panel (not while a dialog is up or typing in a field)
+  // 1-8 open a system's panel (not while a dialog is up or typing in a field)
   if ((e.key === 'p' || e.key === 'P') && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !$('c').inert && !/TEXTAREA|INPUT/.test(e.target.tagName)) takePhoto();
-  if (e.key >= '1' && e.key <= '6' && !e.ctrlKey && !e.metaKey && !e.altKey && !$('c').inert && !/TEXTAREA|INPUT/.test(e.target.tagName)) openPanel(+e.key - 1);
+  if (e.key >= '1' && e.key <= String(SYS.length) && !e.ctrlKey && !e.metaKey && !e.altKey && !$('c').inert && !/TEXTAREA|INPUT/.test(e.target.tagName)) openPanel(+e.key - 1);
 });
 
 // ---------- talents: every healed planet gives a Star Seed; each talent costs one and needs the node above it ----------
@@ -1511,14 +1714,15 @@ const src = c => c.toDataURL(), HAND = src(T.hand), ENERGY = src(T.energy), SEED
 // via: the y where the connector from the parent turns sideways.
 const tier = r => { const b = 140 * r; return { T: b + 25, M: b + 62, B: b + 100, via: b - 8 }; };
 const t0 = tier(0), t1 = tier(1), t2 = tier(2);
+const names = ss => ss.map(s => SYS[s].name).join(ss.length > 2 ? ', ' : ' and ').replace(/, ([^,]*)$/, ' and $1');
 const TAL = [
   ['spark', 'Spark', 'Taps give x3 life.', HAND, 150, t0.T],
   ['seedbank', 'Seed Bank', 'Start every new world with 1,000 life (times your warp boost).', src(TI.sprout), 100, t0.M, 'spark', t0.M],
-  ['lens', 'Vanguard', () => `${SYS[0].name} and ${SYS[1].name} output x2.`, () => TILE[SYS[0].id].lit, 200, t0.M, 'spark', t0.M],
+  ['lens', 'Vanguard', () => `${names(PAIR.lens)} output x2.`, () => TILE[SYS[0].id].lit, 200, t0.M, 'spark', t0.M],
   ['roots', 'Deep Roots', 'All output +25%.', ENERGY, 150, t0.B, 'spark'],
   ['crit', 'Lucky Strike', '10% of taps are critical: x10 life.', src(TI.star), 42, t1.T, 'roots', t1.via],
   ['crit2', 'Jackpot', 'Critical taps happen 20% of the time.', src(TI.star), 42, t1.B, 'crit'],
-  ['swarm', 'Backbone', () => `${SYS[2].name} and ${SYS[3].name} output x2.`, () => TILE[SYS[2].id].lit, 150, t1.T, 'roots', t1.via],
+  ['swarm', 'Backbone', () => `${names(PAIR.swarm)} output x2.`, () => TILE[SYS[3].id].lit, 150, t1.T, 'roots', t1.via],
   ['thrift', 'Bulk Orders', 'Upgrades cost 10% less.', src(TI.tag), 100, t1.M, 'swarm', t1.M],
   ['patron', 'Patron', 'Goal rewards x3.', src(TI.gift), 200, t1.M, 'swarm', t1.M],
   ['bloom', 'Bloom', 'All output +30%.', ENERGY, 150, t1.B, 'swarm'],
@@ -1526,7 +1730,7 @@ const TAL = [
   ['autotap2', 'Tap Swarm', 'Automatic taps 4 times a second.', src(TI.bot), 258, t1.B, 'autotap'],
   ['sleep', 'Night Shift', 'Offline earnings count up to 24h instead of 12h.', src(TI.moon), 42, t2.T, 'bloom', t2.via],
   ['dream', 'Lucid Dreams', 'Offline earnings x2.', src(TI.moon), 42, t2.B, 'sleep'],
-  ['grow', 'Heavy Hitters', () => `${SYS[4].name} and ${SYS[5].name} output x2.`, () => TILE[SYS[4].id].lit, 150, t2.T, 'bloom', t2.via],
+  ['grow', 'Heavy Hitters', () => `${names(PAIR.grow)} output x2.`, () => TILE[SYS[6].id].lit, 150, t2.T, 'bloom', t2.via],
   ['cheap', 'Fast Track', 'Unlocking systems costs 25% less.', src(TI.tag), 100, t2.M, 'grow', t2.M],
   ['echo', 'Warp Echo', 'All output +5% for every world healed, up to +50%.', src(TI.rings), 200, t2.M, 'grow', t2.M],
   ['gaia', 'Gaia', 'All output +50%.', src(TI.sprout), 150, t2.B, 'grow'],
@@ -1885,7 +2089,8 @@ function save() {
 // What is saved, and how a (validated) save becomes state again. Older saves lack later fields: each gets its default.
 const saveFields = () => ({ life: S.life, earned: S.earned, taps: S.taps, goal: S.goal, world: S.world, on: S.on, L: S.L, seeds: S.seeds, tal: S.tal,
   intro: S.intro, done: S.done, best: S.best, ach: S.ach, n: S.n, daily: S.daily, boon: S.boon, offer: S.offer, contract: S.contract });
-const fromSave = (v, played) => ({ life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world, on: v.on, L: v.L,
+const pad = (a, fill) => [...a, ...Array.from({ length: SYS.length - a.length }, fill)]; // saves from the six-slot days
+const fromSave = (v, played) => ({ life: v.life, earned: v.earned, taps: v.taps, goal: v.goal, world: v.world, on: pad(v.on, () => false), L: pad(v.L, () => [0, 0, 0]),
   start: performance.now() / 1000 - (Number.isFinite(played) ? played : 0), // the current clock, not the stale frame time from before a hidden tab
   seeds: v.seeds ?? v.world, // saves from before talents: one seed per planet already healed
   tal: [...new Set(v.tal || [])], intro: v.intro ?? true, // saves from before the intro skip it
@@ -1897,9 +2102,9 @@ const optional = (v, ok) => v === undefined || ok(v); // fields that older saves
 const validSave = d => !!d && Number.isFinite(d.t) && !!d.S
   && ['life', 'earned'].every(k => Number.isFinite(d.S[k]) && d.S[k] >= 0 && d.S[k] < 1e300) // room for 24h of income on the last allowed world
   && ['taps', 'goal', 'world'].every(k => Number.isInteger(d.S[k]) && d.S[k] >= 0)
-  && d.S.goal <= (d.gv === GOALS_V ? GOALS.length : OLD_GOAL.length - 1) && d.S.world <= MAX_WORLD // warp() never goes past it, so every reachable save loads
-  && Array.isArray(d.S.on) && d.S.on.length === SYS.length && d.S.on.every((on, s) => typeof on === 'boolean' && (!on || s === 0 || d.S.on[s - 1])) // unlocked in order
-  && Array.isArray(d.S.L) && d.S.L.length === SYS.length && d.S.L.every((l, s) => Array.isArray(l) && l.length === 3 && l.every(n => Number.isInteger(n) && n >= 0 && n <= MAXL) && (d.S.on[s] || l.every(n => !n)))
+  && d.S.goal <= 20 && d.S.world <= MAX_WORLD // warp() never goes past it, so every reachable save loads
+  && Array.isArray(d.S.on) && [6, SYS.length].includes(d.S.on.length) && d.S.L?.length === d.S.on.length && d.S.on.every((on, s) => typeof on === 'boolean' && (!on || s === 0 || d.S.on[s - 1])) // unlocked in order
+  && Array.isArray(d.S.L) && d.S.L.every((l, s) => Array.isArray(l) && l.length === 3 && l.every(n => Number.isInteger(n) && n >= 0 && n <= MAXL) && (d.S.on[s] || l.every(n => !n)))
   && optional(d.S.intro, v => typeof v === 'boolean') && optional(d.S.done, v => typeof v === 'boolean')
   && optional(d.S.seeds, v => Number.isInteger(v) && v >= 0 && v <= 1e6) // one per warp plus lucky crates
   && optional(d.S.tal, v => Array.isArray(v) && v.every(id => TAL.some(t => t.id === id)))
@@ -1925,7 +2130,7 @@ function load() {
   }
   const v = d.S, prev = S.world;
   Object.assign(S, fromSave(v, d.played));
-  if (d.gv !== GOALS_V) S.goal = OLD_GOAL[S.goal]; // the goal list changed: same progress, new numbering
+  if (d.gv !== GOALS_V) { const g = GOALS.findIndex(g => g.get() < g.need); S.goal = g < 0 ? GOALS.length : g; } // the goal list changed: resume at the first goal not yet met
   const was = SYS.map(sy => sy.id).join();
   setLoadout(S.world);
   if (W && SYS.map(sy => sy.id).join() !== was) resize(); // another tab warped meanwhile
@@ -1937,7 +2142,8 @@ function load() {
 }
 // Credit the income earned since `since` (ms timestamp) while the game wasn't running.
 function away(since) {
-  const sec = Math.min(awayCap(), Math.max(0, (Date.now() - since) / 1000)), gain = rateOf(false) * sec * (has('dream') ? 2 : 1);
+  const sec = Math.min(awayCap(), Math.max(0, (Date.now() - since) / 1000)), night = SYS.reduce((a, sy, s) => a + (S.on[s] && sy.trait === 'night' ? sysOut(s, false) : 0), 0); // Night Shift: double away
+  const gain = (rateOf(false) + night) * sec * (has('dream') ? 2 : 1);
   if (ev && (evT -= sec) <= 0) endEvent(); // the event's clock ran too
   earn(gain); // always credit, even a few seconds in another tab
   S.n.away = Math.max(S.n.away, Math.round(sec));
@@ -2044,7 +2250,7 @@ function catchComet() {
 }
 function stepEvents(dt) {
   if (ev) { if ((evT -= dt) <= 0) endEvent(); }
-  else if (S.on[0] && !$('c').inert && (evNext -= dt) <= 0) startEvent(); // not during the tutorial or behind a dialog
+  else if (S.on[0] && !$('c').inert && (evNext -= dt * (1 + .3 * SYS.filter((sy, s) => S.on[s] && sy.trait === 'gravity').length)) <= 0) startEvent(); // Gravity Well: sooner // not during the tutorial or behind a dialog
   if (ev?.id === 'shower' && Math.random() < dt * 12) meteors.push({ x: Math.random() * W, y: TOP, vx: -40 - Math.random() * 40, vy: 110 + Math.random() * 50 });
   for (const m of meteors) {
     m.x += m.vx * dt; m.y += m.vy * dt;
@@ -2263,13 +2469,13 @@ function step(ms) {
 
   // unlocked systems keep firing; more crew fires faster, but only a few shots fly at once
   SYS.forEach((sy, s) => {
-    if (!S.on[s] || t < (sy.next || 0) || shots.length + beams.length >= 8) return;
+    if (!S.on[s] || t < (sy.next || 0) || shots.length + beams.length >= 16) return;
     fire(s, false);
     sy.next = t + cadence(s) * (ev?.id === 'flare' ? .5 : 1) * (.7 + Math.random() * .6);
   });
   for (const s of shots) if ((s.t += dt) >= s.dur) { s.done = true; land(s.s, s.tx, s.ty, s.real, s.quiet); }
   prune(shots, s => !s.done);
-  for (const p of pulses) { p.r += (p.x === undefined ? R * 1.4 : 50) * dt; p.life -= dt * 1.2; }
+  for (const p of pulses) { p.r = Math.max(.5, p.r + (p.v ?? (p.x === undefined ? R * 1.4 : 50)) * dt); p.life -= dt * 1.2; }
   for (const q of parts) { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= .95; q.vy *= .95; q.life -= dt * 1.4; }
   for (const f of floats) { f.y -= 16 * dt; f.life -= dt * 1.2; }
   for (const b of beams) if (b.delay > 0) b.delay -= dt; else b.life -= dt * (b.fade || 5);
@@ -2287,7 +2493,7 @@ function step(ms) {
     console.assert([9, 10, 24, 25].map(n => (combo = n, comboMul())).join() === '1,1.25,1.25,1.5', 'combo tiers');
     const base = { tap: tapGain(), price: price(0, 1), goal: goalOf(), out: sysOut(0) }, ratio = (id, f) => (S.boon = id, f());
     console.assert(ratio('hands', tapGain) === base.tap * 3 && ratio('short', goalOf) === base.goal * .75 && ratio('summer', () => sysOut(0)) === base.out * 1.5
-      && ratio('bulk', () => price(0, 1)) === Math.ceil(ucost(0, 1, 0) * .8) && ratio('', () => price(0, 1)) === base.price, 'boon multipliers');
+      && ratio('bulk', () => price(0, 1)) === Math.ceil(ucost(0, 1, 0) * (SYS[0].trait === 'steady' ? .85 : 1) * .8) && ratio('', () => price(0, 1)) === base.price, 'boon multipliers');
     console.assert(/^\d{4}-\d{2}-\d{2}$/.test(today()), 'daily date format');
     Object.assign(S, { intro: true, daily: today() }); crateWait = 0; stepCrate(1); console.assert(!crate, 'one supply drop per day');
     console.assert(CONTRACT_KINDS.unlock.pick()?.arg === 1, 'contract: unlock the next system');
