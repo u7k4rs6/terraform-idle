@@ -1998,19 +1998,22 @@ const tapSomewhere = (auto = false) => tapPlanet(CX + (Math.random() - .5) * R, 
 // Combo: hand taps less than COMBO_GAP apart chain up; 10 in a row pay x1.25, 25 pay x1.5. Pausing breaks it.
 const COMBO_GAP = .6, comboMul = () => (combo >= 25 ? 1.5 : combo >= 10 ? 1.25 : 1);
 let combo = 0, comboAt = -9;
+const handTaps = []; // times of the last second's hand taps
 function tapPlanet(x, y, auto = false, mult = 1) {
+  let tired = 1; // spamming past TAP_RATE taps a second only splits the same pay
   if (!auto) {
+    handTaps.push(last); while (handTaps[0] < last - 1) handTaps.shift();
+    tired = Math.min(1, TAP_RATE / handTaps.length);
     const was = comboMul();
     combo = last - comboAt <= COMBO_GAP ? combo + 1 : 1; comboAt = last;
     if (comboMul() > was) { pulses.push({ r: R * .9, life: 1, col: C.sun }); play('coin'); if (combo === 25) quip(QUIPS.combo); }
     S.n.combo = Math.max(S.n.combo || 0, combo);
   }
   const crit = Math.random() < (has('crit2') ? .2 : has('crit') ? .1 : 0), storm = ev?.id === 'shower'; // Lucky Strike / Jackpot; meteor showers pay x5
-  const g = tapGain() * mult * (crit ? 10 : 1) * (storm ? 5 : 1) * (auto ? 1 : comboMul());
+  const g = Math.min(tapGain() * (crit ? 10 : 1) * (auto ? 1 : comboMul()), Math.max(12 * tapOf(0), TAP_MAX * rateOf())) * tired * mult * (storm ? 5 : 1);
   earn(g); S.taps++;
   if (crit) S.n.crit++;
   if (storm) S.n.storm++;
-  if (S.on[0]) { const [lx, ly] = muzzle(0); beams.push({ x1: lx, y1: ly, x2: x, y2: y, life: 1, col: C.acc, end: true }); }
   burst(x, y, crit ? [C.sun, C.line, C.acc] : [C.line, C.acc], crit ? 24 : 10);
   play(crit ? 'crit' : 'tap'); if (crit && !auto) buzz(25); // auto taps would buzz nonstop
   floats.push({ x, y: y - 8, text: '+' + fmt(g), life: 1, col: crit ? C.sun : C.line });

@@ -95,6 +95,10 @@ const MAXL = 50, UPM = [[.25, 1.22], [.8, 1.26], [2.5, 1.3]]; // upgrade k costs
 //   the talents a player collects over that span. Sim: world 1 ~12 min, then 8, 7, 5, 4.7 ... settling near 2-4 min;
 //   a player who never spends seeds settles near 28 min instead of growing without limit.
 const GOAL = 3e8, GOAL_GROWTH = 2, PRICE_GROWTH = 2, DIFFICULTY = 1.5, DIFFICULTY_CAP = 10;
+// Tapping helps but never replaces the machines: hand taps past TAP_RATE a second share that rate's pay, and one tap (with combo
+// and crits) is worth at most TAP_MAX seconds of income (or 12 base taps early on). Sim, a full tap build on world 3 at 25 taps/s:
+// 80% in 0.4 min before, now about the same as a steady tapper; tapping adds at most ~1.2x income.
+const TAP_RATE = 6, TAP_MAX = .2;
 // Highest world number: every value stays finite well past it (goal 3e8 x 2^400 x 1.5^10 ~ 1e130, life checked < 1e300). Warps stop counting here.
 const MAX_WORLD = 400;
 // Always one clear next step at the top, with a reward: [text, progress, target, reward, go].
