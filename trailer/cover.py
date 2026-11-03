@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 HERE = __file__.rsplit('/', 1)[0] or '.'
 PARTS, FONT = f'{HERE}/out/cover/', f'{HERE}/out/VT323.ttf'
+TAGFONT = '/usr/share/fonts/truetype/lato/Lato-Bold.ttf'  # a clean sans for the tagline, next to the pixel title
 W, H = 1260, 1000
 BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
 INK, AMBER, DIM = (239, 232, 218), (255, 181, 71), (154, 162, 182)
@@ -41,12 +42,12 @@ def sky(gw, gh, top, bottom, glow=None):
     rnd = random.Random(7)
     for y in range(gh):
         for x in range(gw):
-            t = y / (gh - 1) + (BAYER[y & 3][x & 3] / 16 - .5) * .12
+            t = y / (gh - 1) + (BAYER[y & 3][x & 3] / 16 - .5) * .04
             col = mix(top, bottom, max(0, min(1, t)))
             if glow:
                 gx, gy, gr, gc, gk = glow
                 d = math.hypot(x - gx, (y - gy) * 1.15) / gr
-                k = max(0, 1 - d) ** 1.6 * gk + (BAYER[y & 3][x & 3] / 16 - .5) * .06
+                k = max(0, 1 - d) ** 1.6 * gk + (BAYER[y & 3][x & 3] / 16 - .5) * .03
                 col = mix(col, gc, max(0, min(1, k)))
             px[x, y] = col + (255,)
     for _ in range(gw * gh // 70):
@@ -127,7 +128,7 @@ def sparks(img, x, y, n, cols, spread, seed):
 
 
 def finish(art, scale):
-    """Scale the art grid up with whole pixels, then a soft vignette and fine grain at full size."""
+    """Scale the art grid up with whole pixels, then a soft vignette (no grain: the pixel art carries the texture)."""
     big = art.resize((art.width * scale, art.height * scale), Image.NEAREST).convert('RGB')
     big = big.crop((0, 0, W, H))
     vig = Image.new('L', (W, H))
@@ -137,45 +138,52 @@ def finish(art, scale):
             d = math.hypot((x - W / 2) / (W * .62), (y - H / 2) / (H * .62))
             v = int(max(0, min(1, (d - .55) / .6)) * 150)
             vp[x, y] = vp[min(W - 1, x + 1), y] = vp[x, min(H - 1, y + 1)] = vp[min(W - 1, x + 1), min(H - 1, y + 1)] = v
-    big = Image.composite(Image.new('RGB', (W, H), (4, 5, 8)), big, vig)
-    rnd = random.Random(1)
-    px = big.load()
-    for _ in range(W * H // 6):
-        x, y, g = rnd.randrange(W), rnd.randrange(H), rnd.randint(-7, 7)
-        p = px[x, y]
-        px[x, y] = (max(0, min(255, p[0] + g)), max(0, min(255, p[1] + g)), max(0, min(255, p[2] + g)))
-    return big
+    return Image.composite(Image.new('RGB', (W, H), (4, 5, 8)), big, vig)
 
 
 def title(img, x, y, size, tag, tag_size, align='left', gap=10):
     d = ImageDraw.Draw(img)
     d.fontmode = '1'
-    f, ft = ImageFont.truetype(FONT, size), ImageFont.truetype(FONT, tag_size)
+    f, ft = ImageFont.truetype(FONT, size), ImageFont.truetype(TAGFONT, tag_size)
 
     def spaced(text, font, track):
         widths = [font.getlength(c) for c in text]
         return widths, sum(widths) + track * (len(text) - 1)
 
     tw, total = spaced('TERRAFORM', f, size * .08)
-    gw_, gtotal = spaced(tag, ft, tag_size * .22)
+    track = tag_size * .16
+    gw_, gtotal = spaced(tag, ft, track)
     width = max(total, gtotal)
     x0 = x - total / 2 if align == 'center' else x
-    heavy = max(1, round(size * .03))
-    for dx, dy, col in [(0, size * .045, (6, 7, 11)), (0, 0, INK)]:  # a hard drop shadow, then the letters, drawn heavy
-        cx = x0
-        for c, w in zip('TERRAFORM', tw):
-            for b in range(heavy + 1):
-                d.text((cx + dx + b, y + dy), c, font=f, fill=col)
-            cx += w + size * .08
+    # the pixel title is drawn small and scaled up x4 with whole pixels, so every step of the letters is the same size
+    q = 4
+    fs = ImageFont.truetype(FONT, size // q)
+    sw = [fs.getlength(c) for c in 'TERRAFORM']
+    small = Image.new('RGBA', (int(sum(sw) + len(sw) * size * .08 / q + 8), size // q + 8))
+    sd = ImageDraw.Draw(small)
+    sd.fontmode = '1'
+    cx = 2
+    for c, w in zip('TERRAFORM', sw):
+        for b in (0, 1):  # one extra pixel column: heavier strokes
+            sd.text((cx + b, 1), c, font=fs, fill=INK + (255,))
+        cx += w + size * .08 / q
+    big = small.resize((small.width * q, small.height * q), Image.NEAREST)
+    shadow = Image.new('RGBA', big.size, (6, 7, 11, 255))
+    total = cx * q
+    x0 = x - total / 2 if align == 'center' else x
+    img.paste(shadow, (int(x0) - 8, int(y + size * .045) - 4), big)
+    img.paste(big, (int(x0) - 8, int(y) - 4), big)
     ty = y + size * .86 + gap
     rule_w = total
     rx = x0
     d.rectangle((rx, ty, rx + rule_w, ty + max(3, size // 48)), fill=AMBER)  # a thin amber rule under the title
     ty += size // 48 + gap
+    d.fontmode = 'L'  # the tagline is smooth type, not pixels
     gx = x - gtotal / 2 if align == 'center' else x
     for c, w in zip(tag, gw_):
-        d.text((gx, ty), c, font=ft, fill=AMBER if align == 'left' else DIM)
-        gx += w + tag_size * .22
+        d.text((gx, ty + 2), c, font=ft, fill=(6, 7, 11))
+        d.text((gx, ty), c, font=ft, fill=(214, 207, 192))
+        gx += w + track
 
 
 def variant_a():
@@ -194,7 +202,7 @@ def variant_a():
     line(art, 44 + 30, 150 + 17, 118, 214, (110, 112, 120), every=2)
     sparks(art, 118, 214, 14, [INK, AMBER, DIM], 6, 9)
     img = finish(art, k)
-    title(img, 72, 54, 168, 'HEAL TWELVE DEAD WORLDS', 46)
+    title(img, 72, 54, 168, 'BRING DEAD WORLDS BACK TO LIFE', 30, gap=14)
     return img
 
 
@@ -219,7 +227,7 @@ def variant_b():
     line(art, 38 + 31, 92 + 17, 85, 142, (197, 140, 255))
     sparks(art, 84, 142, 14, [INK, (197, 140, 255)], 6, 4)
     img = finish(art, k)
-    title(img, W / 2, 46, 176, 'HEAL TWELVE DEAD WORLDS', 46, align='center')
+    title(img, W / 2, 46, 176, 'BRING DEAD WORLDS BACK TO LIFE', 30, align='center', gap=14)
     return img
 
 
@@ -234,7 +242,7 @@ def variant_c():
         line(art, 54 + 56, 150 + 32, tx, ty, AMBER, every=3, on=2)
         sparks(art, tx, ty, 12, [(255, 244, 214), AMBER, (220, 90, 40)], 6, i)
     img = finish(art, k)
-    title(img, 64, 820, 132, 'HEAL TWELVE DEAD WORLDS', 40, gap=8)
+    title(img, 64, 820, 132, 'BRING DEAD WORLDS BACK TO LIFE', 26, gap=10)
     return img
 
 
