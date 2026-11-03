@@ -464,7 +464,44 @@ def thumb_split():
     return glow.apply(img, blur=14, strength=.75)
 
 
+def thumb_wide():
+    """YouTube thumbnail: the barrage key art in 16:9 with the quiet title and 'Official trailer' (no shouting words)."""
+    gw, gh, k, size = 320, 180, 4, (1280, 720)
+    art = sky(gw, gh, (5, 6, 11), (14, 12, 18), glow=(300, 130, 170, (70, 36, 24), .55))
+    layer, seam = planet(11, 250, 214, gw, gh, math.radians(18), front_seed=4, shift=58)
+    art.alpha_composite(layer)
+    glow = Glow(k, size)
+    for (x, y) in seam[::9]:
+        glow.dot((x, y), (200, 100, 40), 1.1)
+    front = sorted([p for p in seam if p[1] < gh - 4], key=lambda p: p[1])
+    tgt = lambda f: front[int(len(front) * f)]
+    blast(art, glow, (172, 150), 11, 11)
+    for i, (a, b) in enumerate([((-10, 178), (150, 160)), ((-10, 150), (126, 134))]):
+        missile(art, glow, a, b, i)
+    bomber, ion = part('m-bomber-0'), part('m-ion-2')
+    gat, lance, laser = part('m-gatling-2', True), part('m-lance-2', True), part('m-laser-2', True)
+    shots = [
+        (ion, (214, 24), (214, 24 + 15), tgt(.08), (240, 250, 255), (98, 208, 238), 2),
+        (lance, (54, 116), (54 + 30, 116 + 17), tgt(.45), (255, 240, 255), (190, 120, 255), 2),
+        (laser, (112, 158), (112 + 30, 158 + 16), tgt(.8), (255, 245, 230), (255, 82, 50), 2),
+    ]
+    for spr, pos, m, to, core, edge, w in shots:
+        put(art, spr, *pos)
+        beam(art, glow, m, to, core, edge, w); impact(art, glow, to, edge, 2 + w, pos[0])
+    put(art, gat, 92, 86)
+    for i, f in enumerate([.2, .26, .32]):
+        t = tgt(f)
+        line(art, 92 + 28, 86 + 16, t[0], t[1], (255, 196, 90), every=3, on=3)
+        glow.line((92 + 28, 86 + 16), t, (255, 150, 50), 1.2)
+        impact(art, glow, t, (255, 181, 71), 1, 30 + i)
+    put(art, bomber, 292, 20)
+    img = finish(art, k, size)
+    img = glow.apply(img, blur=14, strength=.6)
+    title(img, 60, 44, 120, 'OFFICIAL TRAILER', 24, gap=12)
+    return img
+
+
 if __name__ == '__main__':
     v = sys.argv[1] if len(sys.argv) > 1 else 'A'
-    img = {'A': variant_a, 'B': variant_b, 'C': variant_c, 'D': variant_d, 'T': thumb_split}[v]()
+    img = {'A': variant_a, 'B': variant_b, 'C': variant_c, 'D': variant_d, 'T': thumb_split, 'W': thumb_wide}[v]()
     img.save(sys.argv[2] if len(sys.argv) > 2 else f'{HERE}/../itch/cover-{v}.png')
