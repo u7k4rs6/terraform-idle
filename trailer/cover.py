@@ -501,7 +501,36 @@ def thumb_wide():
     return img
 
 
+def thumb_painted(src=PARTS + 'thumb-art.png', cx=740, y=58, tsize=120):
+    """YouTube thumbnail over painted key art: the title in white floating in the open sky, a small italic subtitle (Terra Nil style)."""
+    img = Image.open(src).convert('RGB').resize((1280, 720), Image.LANCZOS)
+    q = 4
+    fs = ImageFont.truetype(FONT, tsize // q)
+    sw = [fs.getlength(c) for c in 'TERRAFORM']
+    small = Image.new('RGBA', (int(sum(sw) + len(sw) * 2 + 10), tsize // q + 8))
+    sd = ImageDraw.Draw(small); sd.fontmode = '1'
+    x = 2
+    for c, w in zip('TERRAFORM', sw):
+        for b in (0, 1): sd.text((x + b, 1), c, font=fs, fill=(255, 255, 255, 255))  # one extra column: heavier strokes
+        x += w + 2
+    big = small.resize((small.width * q, small.height * q), Image.NEAREST)
+    x0 = int(cx - x * q / 2)
+    shade = (16, 26, 86)  # the sky's own deep blue
+    soft = Image.new('L', img.size)
+    soft.paste(big.split()[3], (x0 + 4, y + 10))
+    img = Image.composite(Image.new('RGB', img.size, shade), img, soft.filter(ImageFilter.GaussianBlur(10)).point(lambda v: int(v * .7)))
+    img.paste(Image.new('RGB', big.size, shade), (x0 + 6, y + 8), big)
+    img.paste(big, (x0, y), big)
+    d = ImageDraw.Draw(img)
+    sub, t = ImageFont.truetype('/usr/share/fonts/truetype/lato/Lato-BoldItalic.ttf', 38), 'Official Trailer'
+    tw = d.textlength(t, font=sub)
+    ty = y + tsize + 2
+    d.text((cx - tw / 2 + 3, ty + 3), t, font=sub, fill=shade)
+    d.text((cx - tw / 2, ty), t, font=sub, fill=(255, 255, 255))
+    return img
+
+
 if __name__ == '__main__':
     v = sys.argv[1] if len(sys.argv) > 1 else 'A'
-    img = {'A': variant_a, 'B': variant_b, 'C': variant_c, 'D': variant_d, 'T': thumb_split, 'W': thumb_wide}[v]()
+    img = {'A': variant_a, 'B': variant_b, 'C': variant_c, 'D': variant_d, 'T': thumb_split, 'W': thumb_wide, 'P': thumb_painted}[v]()
     img.save(sys.argv[2] if len(sys.argv) > 2 else f'{HERE}/../itch/cover-{v}.png')
