@@ -578,9 +578,9 @@ def grade_to_game(img):
 
 
 def thumb_game(src=PARTS + 'thumb-art.png'):
-    """The painted key art graded into Terraform's dusk palette, with the game's title treatment (cream, amber rule, tracked caps)."""
+    """The painted key art graded into Terraform's dusk palette, with the game's title treatment (cream pixel title, amber rule)."""
     img = grade_to_game(Image.open(src).convert('RGB').resize((1280, 720), Image.LANCZOS))
-    title(img, 742, 44, 120, 'OFFICIAL TRAILER', 26, align='center', gap=12)
+    title(img, 742, 52, 120, '', 26, align='center', gap=12)  # just the title and its amber rule
     return img
 
 
