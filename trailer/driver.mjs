@@ -6,14 +6,14 @@ import path from 'node:path'
 
 const W = 1280, H = 720, FRAME = 1000 / 30
 // cine: no HUD at all (clean shots of the planet); story: no HUD but the commander stays
-const CSS = `body.cine #top, body.cine #side, body.cine #bar, body.cine #toast, body.cine #prev, body.cine #next, body.cine #panel, body.cine #guide,
-  body.story #top, body.story #side, body.story #bar, body.story #toast { visibility: hidden !important; }`
+const CSS = `body.cine #top, body.cine #dock, body.cine #toast, body.cine #contract, body.cine #prev, body.cine #next, body.cine #panel, body.cine #guide,
+  body.story #top, body.story #dock, body.story #toast, body.story #contract { visibility: hidden !important; }`
 
 export async function setup({ page, url }) {
   await page.evaluate(() => { localStorage.clear(); localStorage.setItem('terraform-sound', JSON.stringify({ sfx: true, music: false })) }) // the trailer brings its own music
   await page.goto(url + '?reset', { waitUntil: 'networkidle0' })
   await page.addStyleTag({ content: CSS })
-  await page.evaluate(() => { S.intro = true; S.taps = 1; clearInterval(gTimer); document.getElementById('guide').hidden = true })
+  await page.evaluate(() => { S.intro = true; S.taps = 1; clearInterval(gTimer); document.getElementById('guide').hidden = true; S.ach = ACH.map(a => a.id); quip = () => false }) // no passing remarks or achievement pop-ups over the shots
   // the art the edit shows on its own cards: the commander, every machine, the tap hand
   const art = await page.evaluate(() => ({ vos: FACE[0], hand: T.hand.toDataURL(), sprites: Object.keys(CATALOG).map(id => ({ id, name: CATALOG[id].name, src: TILE[id].lit })) }))
   const dir = path.join(process.env.TRAILER_OUT, 'art')
@@ -47,7 +47,7 @@ export async function play({ page, wait, mark }) {
   // heal smoothly from h0 to h1 over ms (heal is log-scale in life earned, so set the earned total for each heal level)
   async function heal(h0, h1, ms) {
     await ev(({ h0, h1, ms }) => {
-      const at = h => 1000 * ((1 + GOAL / 1000) ** h - 1), t0 = performance.now()
+      const at = h => 1000 * ((1 + goalOf() / 1000) ** h - 1), t0 = performance.now()
       const id = setInterval(() => { const k = Math.min(1, (performance.now() - t0) / ms), e = k * k * (3 - 2 * k); S.earned = Math.max(S.earned, at(h0 + (h1 - h0) * e)); if (k >= 1) clearInterval(id) }, 16)
     }, { h0, h1, ms })
     await wait(ms + 60)
@@ -72,7 +72,7 @@ export async function play({ page, wait, mark }) {
   await scene('commander')
   await ev(() => guide([
     { text: 'Engineer. Earth ran out of room a long time ago.' },
-    { text: 'Out here at the edge of the map: five dead worlds. No air. No water. No life.' },
+    { text: 'Out here at the edge of the map: twelve dead worlds. No air. No water. No life.' },
     { text: 'Terraform Corps is going to bring them back to life. And you are going to lead it.' },
   ]))
   for (let i = 0; i < 3; i++) { await wait(3000); await mark('line', { i }); if (i < 2) await tap('#gbubble') }
@@ -89,15 +89,15 @@ export async function play({ page, wait, mark }) {
   await ev(() => { S.life = 600 })
   await scene('unlock')
   await tap('#bar .tile'); await wait(700)
-  await tap('#prows .row .buy'); await mark('weapon', { s: 0 }); await wait(700)
+  await tap('#prows .row .buy'); await mark('weapon', { s: 0, name: await ev(() => SYS[0].name) }); await wait(700)
   for (let i = 0; i < 3; i++) { await tap('#prows .row:nth-child(2) .buy'); await wait(150) }
   await wait(500)
 
   // 5. every other system, one by one
   await ev(() => { S.life = 1e12 })
-  for (let s = 1; s < 6; s++) {
+  for (let s = 1; s < 8; s++) {
     await tap('#next'); await wait(650)
-    await tap('#prows .row .buy'); await mark('weapon', { s }); await wait(900)
+    await tap('#prows .row .buy'); await mark('weapon', { s, name: await ev(s => SYS[s].name, s) }); await wait(900)
   }
   await ev(() => S.L.forEach(L => { L[0] = 25 }))
   await tap('#pclose')
@@ -107,26 +107,26 @@ export async function play({ page, wait, mark }) {
   await ev(() => { S.done = true })
   await scene('alive')
   await heal(await ev(() => healOf(S.earned)), .995, 8000)
-  await ev(() => { S.done = false; S.earned = GOAL })
+  await ev(() => { S.done = false; S.earned = goalOf() * 1.01 }); await wait(400) // the warp dialog opens by itself
   await scene('warpdialog'); await wait(1600)
-  await tap('#warpbtn'); await scene('warp'); await wait(3200)
+  await tap('#warpgo'); await scene('warp'); await wait(3200)
   await tap('#gskip')
 
-  // 7. the next world brings new machines: unlock the antimatter reactor with the camera on it
-  await ev(() => { S.life = 1e14; S.on = [true, true, true, true, true, false]; S.L.forEach(L => { L[0] = 25 }) })
+  // 7. another world, another arsenal: OBSIDIAN, unlocking its last machine (the Singularity Bore) with the camera on it
+  await ev(() => { S.world = 7; setLoadout(7); buildWorld(); resize(); S.life = 1e14; S.on = SYS.map((_, s) => s < 7); S.L = SYS.map((_, s) => s < 7 ? [25, 10, 5] : [0, 0, 0]) })
   await wait(400)
-  await tap('#bar .tile:nth-child(6)'); await wait(700)
-  await tap('#prows .row .buy'); await mark('weapon', { s: 5, world: 1 }); await wait(1300)
+  await tap('#bar .tile:nth-child(8)'); await wait(700)
+  await tap('#prows .row .buy'); await mark('weapon', { s: 7, world: 7, name: await ev(() => SYS[7].name) }); await wait(1300)
   await tap('#pclose')
   await scene('newarsenal'); await barrage(); await wait(1400); await barrage(); await wait(2600)
 
   // 8. every planet from dead to alive
   await mode('cine')
-  for (let w = 0; w < 5; w++) {
+  for (const w of [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]) {
     await setWorld(w)
-    await mark('world', { w, phase: 'dead' }); await wait(1200)
-    await mark('world', { w, phase: 'heal' }); await heal(0, 1, 2200)
-    await mark('world', { w, phase: 'alive' }); await wait(1000)
+    await mark('world', { w, phase: 'dead' }); await wait(700)
+    await mark('world', { w, phase: 'heal' }); await heal(0, 1, 1600)
+    await mark('world', { w, phase: 'alive' }); await wait(600)
   }
 
   // 9. the talent map
@@ -141,8 +141,8 @@ export async function play({ page, wait, mark }) {
   await wait(900)
   await tap('#tclose')
 
-  // 10. the barrage: every machine at once on the mixed world
-  await mode('cine'); await setWorld(2); await heal(0, .97, 100)
+  // 10. the barrage: every machine at once on OCEANUS (gatling, harpoon, warhead silo, annihilator...)
+  await mode('cine'); await setWorld(9); await heal(0, .97, 100)
   await scene('climax')
   for (let i = 0; i < 12; i++) { await barrage(); await wait(500) }
 
